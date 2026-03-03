@@ -1,0 +1,31 @@
+{
+  "productos": [
+    { "id": 1, "nombre": "Coca Cola 500ml", "codigoBarras": "7790895000591", "precioCosto": 900, "precioVenta": 1500, "stock": 24, "stockMinimo": 10, "categoria": "Bebidas", "lotes": [{"id": 1, "cantidad": 24, "fechaVencimiento": "2026-08-15", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 2, "nombre": "Pepsi 500ml", "codigoBarras": "7791813420316", "precioCosto": 850, "precioVenta": 1400, "stock": 18, "stockMinimo": 10, "categoria": "Bebidas", "lotes": [{"id": 2, "cantidad": 18, "fechaVencimiento": "2026-07-20", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 3, "nombre": "Agua Mineral 500ml", "codigoBarras": "7798085880016", "precioCosto": 500, "precioVenta": 900, "stock": 30, "stockMinimo": 15, "categoria": "Bebidas", "lotes": [{"id": 3, "cantidad": 30, "fechaVencimiento": "2027-01-10", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 4, "nombre": "Alfajor Jorgito", "codigoBarras": "7790040003002", "precioCosto": 450, "precioVenta": 800, "stock": 15, "stockMinimo": 10, "categoria": "Golosinas", "lotes": [{"id": 4, "cantidad": 15, "fechaVencimiento": "2026-06-01", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 5, "nombre": "Alfajor Havanna", "codigoBarras": "7790272001012", "precioCosto": 1100, "precioVenta": 1800, "stock": 8, "stockMinimo": 5, "categoria": "Golosinas", "lotes": [{"id": 5, "cantidad": 8, "fechaVencimiento": "2026-05-15", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 6, "nombre": "Galletitas Oreo", "codigoBarras": "7622210404558", "precioCosto": 700, "precioVenta": 1200, "stock": 12, "stockMinimo": 8, "categoria": "Galletitas", "lotes": [{"id": 6, "cantidad": 12, "fechaVencimiento": "2026-09-20", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 7, "nombre": "Papas Lays Classic", "codigoBarras": "7790310980040", "precioCosto": 1200, "precioVenta": 2000, "stock": 10, "stockMinimo": 6, "categoria": "Snacks", "lotes": [{"id": 7, "cantidad": 10, "fechaVencimiento": "2026-04-10", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 8, "nombre": "Chicle Beldent", "codigoBarras": "77916760", "precioCosto": 250, "precioVenta": 500, "stock": 20, "stockMinimo": 10, "categoria": "Golosinas", "lotes": [{"id": 8, "cantidad": 20, "fechaVencimiento": "2027-03-01", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 9, "nombre": "Caramelos Sugus", "codigoBarras": "7790580532000", "precioCosto": 150, "precioVenta": 300, "stock": 3, "stockMinimo": 10, "categoria": "Golosinas", "lotes": [{"id": 9, "cantidad": 3, "fechaVencimiento": "2026-03-01", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 10, "nombre": "Yerba Mate 1kg", "codigoBarras": "7790150000278", "precioCosto": 2200, "precioVenta": 3500, "stock": 5, "stockMinimo": 4, "categoria": "Almacen", "lotes": [{"id": 10, "cantidad": 5, "fechaVencimiento": "2027-06-01", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 11, "nombre": "Pan Lactal", "codigoBarras": "7790040008019", "precioCosto": 1800, "precioVenta": 2800, "stock": 4, "stockMinimo": 5, "categoria": "Panaderia", "lotes": [{"id": 11, "cantidad": 4, "fechaVencimiento": "2026-02-25", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 12, "nombre": "Leche Entera 1L", "codigoBarras": "7790580099404", "precioCosto": 1000, "precioVenta": 1600, "stock": 2, "stockMinimo": 8, "categoria": "Lacteos", "lotes": [{"id": 12, "cantidad": 2, "fechaVencimiento": "2026-03-05", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 13, "nombre": "Jugo Cepita 1L", "codigoBarras": "7790895002069", "precioCosto": 1400, "precioVenta": 2200, "stock": 7, "stockMinimo": 5, "categoria": "Bebidas", "lotes": [{"id": 13, "cantidad": 7, "fechaVencimiento": "2026-10-15", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 14, "nombre": "Chocolate Milka", "codigoBarras": "7622210673459", "precioCosto": 1500, "precioVenta": 2500, "stock": 6, "stockMinimo": 4, "categoria": "Golosinas", "lotes": [{"id": 14, "cantidad": 6, "fechaVencimiento": "2026-11-01", "fechaIngreso": "2026-02-18T10:00:00"}] },
+    { "id": 15, "nombre": "Fernet Branca 750ml", "codigoBarras": "8002650011108", "precioCosto": 5500, "precioVenta": 8500, "stock": 3, "stockMinimo": 2, "categoria": "Bebidas", "lotes": [{"id": 15, "cantidad": 3, "fechaVencimiento": "2028-01-01", "fechaIngreso": "2026-02-18T10:00:00"}] }
+  ],
+  "ventas": [],
+  "usuarios": [
+    { "id": 1, "nombre": "Administrador", "usuario": "admin", "password": "admin123", "rol": "admin", "activo": true },
+    { "id": 2, "nombre": "Empleado", "usuario": "empleado", "password": "emp123", "rol": "empleado", "activo": true }
+  ],
+  "sesiones": [],
+  "cajas": [],
+  "nextProductoId": 16,
+  "nextVentaId": 1,
+  "nextLoteId": 16,
+  "nextUsuarioId": 3,
+  "nextCajaId": 1
+}
