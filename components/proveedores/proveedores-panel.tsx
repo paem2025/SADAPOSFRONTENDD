@@ -150,6 +150,7 @@ export function ProveedoresPanel() {
       <Card>
         <CardContent className="flex flex-col gap-2 pt-6 sm:flex-row sm:items-center">
           <Input
+            autoFocus
             placeholder="Buscar por nombre, contacto o email"
             value={q}
             onChange={(e) => setQ(e.target.value)}

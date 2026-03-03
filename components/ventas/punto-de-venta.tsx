@@ -253,6 +253,7 @@ export function PuntoDeVenta() {
     "/api/cajas/abierta",
     cajaFetcher
   )
+  const cajaAbiertaId = cajaAbierta?.id ?? null
 
   const query = entrada.trim().toLowerCase()
 
@@ -266,6 +267,18 @@ export function PuntoDeVenta() {
   }, [productos, query])
 
   const productosRapidos = useMemo(() => productosFiltrados.slice(0, 9), [productosFiltrados])
+
+  useEffect(() => {
+    if (!cajaAbiertaId || cargando || dialogNuevoAbierto) return
+
+    const frame = window.requestAnimationFrame(() => {
+      const input = document.getElementById("pos-busqueda-producto") as HTMLInputElement | null
+      if (!input || input.disabled) return
+      input.focus()
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [cajaAbiertaId, cargando, dialogNuevoAbierto])
 
   const subtotal = useMemo(
     () => carrito.reduce((acc, it) => acc + it.precioUnitario * it.cantidad, 0),
@@ -752,6 +765,7 @@ export function PuntoDeVenta() {
               <form onSubmit={buscarPorCodigo} className="relative">
                 <Barcode className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
+                  id="pos-busqueda-producto"
                   value={entrada}
                   onChange={(e) => setEntrada(e.target.value)}
                   placeholder="Escanea el codigo de barras o escribe el nombre del producto..."

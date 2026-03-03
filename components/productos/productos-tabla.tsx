@@ -545,6 +545,7 @@ export default function ProductosTabla() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              autoFocus
               placeholder="Buscar por nombre o codigo..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
