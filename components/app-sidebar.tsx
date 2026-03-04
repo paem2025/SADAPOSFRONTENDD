@@ -25,7 +25,7 @@ import { useAuth } from "@/lib/auth-context"
 const navItems = [
   
   { href: "/ventas", label: "Punto de Venta", icon: ShoppingCart, rol: "todos" as const },
-  { href: "/compras", label: "Compras", icon: Truck, rol: "todos" as const },
+  { href: "/compras", label: "Compras", icon: Truck, rol: "admin" as const },
   { href: "/productos", label: "Productos", icon: Package, rol: "admin" as const },
   { href: "/proveedores", label: "Proveedores", icon: Building2, rol: "admin" as const },
   { href: "/reportes", label: "Reportes", icon: BarChart3, rol: "admin" as const },
