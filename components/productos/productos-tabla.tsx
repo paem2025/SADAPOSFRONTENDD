@@ -21,6 +21,8 @@ import {
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
+type ModoPrecioPeso = "gramo" | "cien_gramos"
+
 type ProductoBackend = {
   id: number
   nombre: string
@@ -31,6 +33,9 @@ type ProductoBackend = {
   stockMinimo: number
   categoria: string | null
   fechaVencimiento: string | null
+  esPesable?: boolean
+  unidadMedida?: "unidad" | "gramo"
+  modoPrecioDefault?: ModoPrecioPeso | null
 }
 
 type LoteResponse = {
@@ -176,6 +181,8 @@ export default function ProductosTabla() {
   const [formStockMinimo, setFormStockMinimo] = useState("")
   const [formCategoria, setFormCategoria] = useState("")
   const [formVencimiento, setFormVencimiento] = useState("")
+  const [formEsPesable, setFormEsPesable] = useState(false)
+  const [formModoPrecioDefault, setFormModoPrecioDefault] = useState<ModoPrecioPeso>("cien_gramos")
 
   useEffect(() => {
     setPage(0)
@@ -213,8 +220,7 @@ export default function ProductosTabla() {
     [lotes]
   )
 
-  function abrirFormularioNuevo() {
-    setProductoEditando(null)
+  function resetFormulario() {
     setFormNombre("")
     setFormCodigo("")
     setFormPrecioCosto("")
@@ -223,6 +229,13 @@ export default function ProductosTabla() {
     setFormStockMinimo("5")
     setFormCategoria("General")
     setFormVencimiento("")
+    setFormEsPesable(false)
+    setFormModoPrecioDefault("cien_gramos")
+  }
+
+  function abrirFormularioNuevo() {
+    setProductoEditando(null)
+    resetFormulario()
     setDialogAbierto(true)
   }
 
@@ -236,6 +249,8 @@ export default function ProductosTabla() {
     setFormStockMinimo(String(producto.stockMinimo ?? 0))
     setFormCategoria(producto.categoria ?? "General")
     setFormVencimiento(producto.fechaVencimiento ?? "")
+    setFormEsPesable(Boolean(producto.esPesable))
+    setFormModoPrecioDefault(producto.modoPrecioDefault ?? "cien_gramos")
     setDialogAbierto(true)
   }
 
@@ -287,6 +302,9 @@ export default function ProductosTabla() {
         stockMinimo,
         categoria: formCategoria.trim() ? formCategoria.trim() : "General",
         fechaVencimiento,
+        esPesable: formEsPesable,
+        unidadMedida: formEsPesable ? "gramo" : "unidad",
+        modoPrecioDefault: formEsPesable ? formModoPrecioDefault : null,
       }
 
       if (productoEditando) {
@@ -302,6 +320,7 @@ export default function ProductosTabla() {
       await mutateStockBajo()
       setDialogAbierto(false)
       setProductoEditando(null)
+      resetFormulario()
     } catch (err: unknown) {
       toast.error(getApiErrorMessage(err, "Error al guardar producto"))
     } finally {
@@ -372,7 +391,9 @@ export default function ProductosTabla() {
 
       await api.patch(`/api/productos/${productoStock.id}`, payload)
 
-      toast.success(`Stock actualizado: +${cant} unidades`)
+      toast.success(
+        `Stock actualizado: +${cant} ${productoStock.esPesable ? "g" : "unidades"}`
+      )
       await mutate()
       await mutateStockBajo()
 
@@ -413,7 +434,10 @@ export default function ProductosTabla() {
         open={dialogAbierto}
         onOpenChange={(open) => {
           setDialogAbierto(open)
-          if (!open) setProductoEditando(null)
+          if (!open) {
+            setProductoEditando(null)
+            resetFormulario()
+          }
         }}
       >
         <DialogContent className="sm:max-w-lg">
@@ -431,7 +455,7 @@ export default function ProductosTabla() {
                 id="nombre"
                 value={formNombre}
                 onChange={(e) => setFormNombre(e.target.value)}
-                placeholder="Ej: Coca Cola 500ml"
+                placeholder={formEsPesable ? "Ej: Caramelos a granel" : "Ej: Coca Cola 500ml"}
               />
             </div>
 
@@ -443,6 +467,49 @@ export default function ProductosTabla() {
                 onChange={(e) => setFormCodigo(e.target.value)}
                 placeholder="Escanea o escribe el codigo (opcional)"
               />
+            </div>
+
+            <div className="grid gap-3 rounded-lg border p-3">
+              <div className="flex items-center gap-2">
+                <input
+                  id="formEsPesable"
+                  type="checkbox"
+                  checked={formEsPesable}
+                  onChange={(e) => setFormEsPesable(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <Label htmlFor="formEsPesable" className="cursor-pointer">
+                  Producto pesable (venta por gramos)
+                </Label>
+              </div>
+
+              {formEsPesable && (
+                <>
+                  <div className="grid gap-2">
+                    <Label>Modo de precio por defecto</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        type="button"
+                        variant={formModoPrecioDefault === "cien_gramos" ? "default" : "outline"}
+                        onClick={() => setFormModoPrecioDefault("cien_gramos")}
+                      >
+                        Precio por 100g
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={formModoPrecioDefault === "gramo" ? "default" : "outline"}
+                        onClick={() => setFormModoPrecioDefault("gramo")}
+                      >
+                        Precio por gramo
+                      </Button>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    Si es pesable, el stock se guarda en gramos. Ejemplo: 5000 = 5 kg.
+                  </p>
+                </>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -457,20 +524,33 @@ export default function ProductosTabla() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="precio">Precio de venta *</Label>
+                <Label htmlFor="precio">
+                  {formEsPesable
+                    ? formModoPrecioDefault === "gramo"
+                      ? "Precio base por gramo *"
+                      : "Precio base cada 100g *"
+                    : "Precio de venta *"}
+                </Label>
                 <Input
                   id="precio"
                   type="number"
                   value={formPrecio}
                   onChange={(e) => setFormPrecio(e.target.value)}
-                  placeholder="Lo que cobras"
+                  placeholder={
+                    formEsPesable
+                      ? formModoPrecioDefault === "gramo"
+                        ? "Ej: 12.5"
+                        : "Ej: 1250"
+                      : "Lo que cobras"
+                  }
                 />
               </div>
             </div>
 
             {formPrecioCosto && formPrecio && Number(formPrecioCosto) > 0 && (
               <div className="rounded-lg border px-3 py-2 text-sm text-foreground">
-                Ganancia: {formatPrecio(Number(formPrecio) - Number(formPrecioCosto))} por unidad (
+                Ganancia: {formatPrecio(Number(formPrecio) - Number(formPrecioCosto))} por{" "}
+                {formEsPesable ? (formModoPrecioDefault === "gramo" ? "gramo" : "100g") : "unidad"} (
                 {calcularMargen(Number(formPrecioCosto), Number(formPrecio))}% de margen)
               </div>
             )}
@@ -498,23 +578,23 @@ export default function ProductosTabla() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="stock">{productoEditando ? "Stock" : "Stock inicial"}</Label>
+                <Label htmlFor="stock">{productoEditando ? (formEsPesable ? "Stock (gramos)" : "Stock") : formEsPesable ? "Stock inicial (gramos)" : "Stock inicial"}</Label>
                 <Input
                   id="stock"
                   type="number"
                   value={formStock}
                   onChange={(e) => setFormStock(e.target.value)}
-                  placeholder="0"
+                  placeholder={formEsPesable ? "Ej: 5000" : "0"}
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="stockMinimo">Stock minimo (alerta)</Label>
+                <Label htmlFor="stockMinimo">{formEsPesable ? "Stock minimo (gramos)" : "Stock minimo (alerta)"}</Label>
                 <Input
                   id="stockMinimo"
                   type="number"
                   value={formStockMinimo}
                   onChange={(e) => setFormStockMinimo(e.target.value)}
-                  placeholder="5"
+                  placeholder={formEsPesable ? "Ej: 500" : "5"}
                 />
               </div>
             </div>
@@ -600,7 +680,12 @@ export default function ProductosTabla() {
                       <TableRow key={p.id}>
                         <TableCell>
                           <div>
-                            <p className="font-medium">{p.nombre}</p>
+                            <p className="font-medium">
+                              {p.nombre}
+                              {p.esPesable && (
+                                <span className="ml-2 text-xs text-muted-foreground">(granel)</span>
+                              )}
+                            </p>
                             <p className="text-xs text-muted-foreground lg:hidden">{p.codigoBarras ?? "-"}</p>
                           </div>
                         </TableCell>
@@ -632,7 +717,9 @@ export default function ProductosTabla() {
                         </TableCell>
 
                         <TableCell className="text-center">
-                          <Badge variant={p.stock <= p.stockMinimo ? "destructive" : "secondary"}>{p.stock}</Badge>
+                          <Badge variant={p.stock <= p.stockMinimo ? "destructive" : "secondary"}>
+                            {p.esPesable ? `${p.stock}g` : p.stock}
+                          </Badge>
                         </TableCell>
 
                         <TableCell className="text-right">
@@ -742,20 +829,24 @@ export default function ProductosTabla() {
             </DialogTitle>
             <DialogDescription>
               {productoStock
-                ? `Agregar unidades a: ${productoStock.nombre} (stock actual: ${productoStock.stock})`
+                ? `Agregar ${productoStock.esPesable ? "gramos" : "unidades"} a: ${productoStock.nombre} (stock actual: ${
+                    productoStock.esPesable ? `${productoStock.stock}g` : productoStock.stock
+                  })`
                 : "Selecciona un producto"}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="cantidadStock">Cantidad a ingresar *</Label>
+              <Label htmlFor="cantidadStock">
+                {productoStock?.esPesable ? "Gramos a ingresar *" : "Cantidad a ingresar *"}
+              </Label>
               <Input
                 id="cantidadStock"
                 type="number"
                 value={cantidadStock}
                 onChange={(e) => setCantidadStock(e.target.value)}
-                placeholder="Ej: 20"
+                placeholder={productoStock?.esPesable ? "Ej: 500" : "Ej: 20"}
                 min="1"
               />
             </div>
@@ -837,10 +928,10 @@ export default function ProductosTabla() {
                   return (
                     <div key={l.id} className="grid grid-cols-5 gap-2 border-b px-4 py-3 text-sm last:border-b-0">
                       <div>
-                        <Badge variant={idx === 0 ? "default" : "secondary"}>{idx + 1}Â°</Badge>
+                        <Badge variant={idx === 0 ? "default" : "secondary"}>{idx + 1}°</Badge>
                       </div>
                       <div>{formatFechaIngreso(l.fechaIngreso)}</div>
-                      <div>{l.cantidad}</div>
+                      <div>{productoLotes?.esPesable ? `${l.cantidad}g` : l.cantidad}</div>
                       <div>{formatFechaVencimiento(l.fechaVencimiento)}</div>
                       <div>
                         <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${est.className}`}>

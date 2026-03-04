@@ -311,6 +311,8 @@ export function PuntoDeVenta() {
   const [nuevoStockMinimo, setNuevoStockMinimo] = useState("5")
   const [nuevoCategoria, setNuevoCategoria] = useState("General")
   const [nuevoVencimiento, setNuevoVencimiento] = useState("")
+  const [nuevoEsPesable, setNuevoEsPesable] = useState(false)
+  const [nuevoModoPrecioDefault, setNuevoModoPrecioDefault] = useState<ModoPrecioPeso>("cien_gramos")
 
   const [ultimaVenta, setUltimaVenta] = useState<{ id: number; total: number } | null>(null)
   const [dialogAnularAbierto, setDialogAnularAbierto] = useState(false)
@@ -470,6 +472,8 @@ export function PuntoDeVenta() {
     setNuevoStockMinimo("5")
     setNuevoCategoria("General")
     setNuevoVencimiento("")
+    setNuevoEsPesable(false)
+    setNuevoModoPrecioDefault("cien_gramos")
   }
 
   function resetDialogPeso() {
@@ -730,11 +734,19 @@ export function PuntoDeVenta() {
       return
     }
     if (!Number.isInteger(stockInicial) || stockInicial < 0) {
-      toast.error("Ingresa un stock inicial valido")
+      toast.error(
+        nuevoEsPesable
+          ? "Ingresa un stock inicial valido en gramos"
+          : "Ingresa un stock inicial valido"
+      )
       return
     }
     if (!Number.isInteger(stockMinimo) || stockMinimo < 0) {
-      toast.error("Ingresa un stock minimo valido")
+      toast.error(
+        nuevoEsPesable
+          ? "Ingresa un stock minimo valido en gramos"
+          : "Ingresa un stock minimo valido"
+      )
       return
     }
 
@@ -750,6 +762,9 @@ export function PuntoDeVenta() {
           stockMinimo,
           categoria: nuevoCategoria.trim() || "General",
           fechaVencimiento,
+          esPesable: nuevoEsPesable,
+          unidadMedida: nuevoEsPesable ? "gramo" : "unidad",
+          modoPrecioDefault: nuevoEsPesable ? nuevoModoPrecioDefault : null,
         })
         .then((r) => r.data as Producto)
 
@@ -1101,11 +1116,11 @@ export function PuntoDeVenta() {
                     </div>
                   </button>
                 ))}
-
-                {productosRapidos.length === 0 && (
-                  <p className="pt-2 text-sm text-muted-foreground">Sin resultados.</p>
-                )}
               </div>
+
+              {productosRapidos.length === 0 && (
+                <p className="pt-2 text-sm text-muted-foreground">Sin resultados.</p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1688,6 +1703,9 @@ export function PuntoDeVenta() {
                   onChange={(e) => setCodigoNuevo(e.target.value)}
                   placeholder="Escanea o escribe el codigo"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Para productos a granel podes usar un codigo interno, por ejemplo: GRANEL-CARAMELOS
+                </p>
               </div>
 
               <div className="grid gap-2">
@@ -1696,8 +1714,51 @@ export function PuntoDeVenta() {
                   id="nuevoNombre"
                   value={nuevoNombre}
                   onChange={(e) => setNuevoNombre(e.target.value)}
-                  placeholder="Ej: Coca Cola 500ml"
+                  placeholder="Ej: Coca Cola 500ml o Caramelos a granel"
                 />
+              </div>
+
+              <div className="grid gap-3 rounded-md border p-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    id="nuevoEsPesable"
+                    type="checkbox"
+                    checked={nuevoEsPesable}
+                    onChange={(e) => setNuevoEsPesable(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="nuevoEsPesable" className="cursor-pointer">
+                    Producto pesable (venta por gramos)
+                  </Label>
+                </div>
+
+                {nuevoEsPesable && (
+                  <>
+                    <div className="grid gap-2">
+                      <Label>Modo de precio por defecto</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant={nuevoModoPrecioDefault === "cien_gramos" ? "default" : "outline"}
+                          onClick={() => setNuevoModoPrecioDefault("cien_gramos")}
+                        >
+                          Precio por 100g
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={nuevoModoPrecioDefault === "gramo" ? "default" : "outline"}
+                          onClick={() => setNuevoModoPrecioDefault("gramo")}
+                        >
+                          Precio por gramo
+                        </Button>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground">
+                      Si es pesable, el stock se guarda en gramos. Ejemplo: 5000 = 5 kg.
+                    </p>
+                  </>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1712,13 +1773,25 @@ export function PuntoDeVenta() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="nuevoPrecioVenta">Precio de Venta *</Label>
+                  <Label htmlFor="nuevoPrecioVenta">
+                    {nuevoEsPesable
+                      ? nuevoModoPrecioDefault === "gramo"
+                        ? "Precio Base por gramo *"
+                        : "Precio Base cada 100g *"
+                      : "Precio de Venta *"}
+                  </Label>
                   <Input
                     id="nuevoPrecioVenta"
                     value={nuevoPrecioVenta}
                     onChange={(e) => setNuevoPrecioVenta(e.target.value)}
                     inputMode="decimal"
-                    placeholder="Lo que cobras"
+                    placeholder={
+                      nuevoEsPesable
+                        ? nuevoModoPrecioDefault === "gramo"
+                          ? "Ej: 12.5"
+                          : "Ej: 1250"
+                        : "Lo que cobras"
+                    }
                   />
                 </div>
               </div>
@@ -1730,7 +1803,7 @@ export function PuntoDeVenta() {
                     id="nuevoCategoria"
                     value={nuevoCategoria}
                     onChange={(e) => setNuevoCategoria(e.target.value)}
-                    placeholder="Ej: Bebidas"
+                    placeholder="Ej: Bebidas o Golosinas"
                   />
                 </div>
                 <div className="grid gap-2">
@@ -1746,23 +1819,27 @@ export function PuntoDeVenta() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-2">
-                  <Label htmlFor="nuevoStock">Stock Inicial</Label>
+                  <Label htmlFor="nuevoStock">
+                    {nuevoEsPesable ? "Stock Inicial (gramos)" : "Stock Inicial"}
+                  </Label>
                   <Input
                     id="nuevoStock"
                     value={nuevoStock}
                     onChange={(e) => setNuevoStock(e.target.value)}
                     inputMode="numeric"
-                    placeholder="0"
+                    placeholder={nuevoEsPesable ? "Ej: 5000" : "0"}
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="nuevoStockMinimo">Stock Minimo (alerta)</Label>
+                  <Label htmlFor="nuevoStockMinimo">
+                    {nuevoEsPesable ? "Stock Minimo (gramos)" : "Stock Minimo (alerta)"}
+                  </Label>
                   <Input
                     id="nuevoStockMinimo"
                     value={nuevoStockMinimo}
                     onChange={(e) => setNuevoStockMinimo(e.target.value)}
                     inputMode="numeric"
-                    placeholder="5"
+                    placeholder={nuevoEsPesable ? "Ej: 500" : "5"}
                   />
                 </div>
               </div>
