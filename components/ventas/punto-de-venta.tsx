@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import {
   Barcode,
   ShoppingCart,
+  Scale,
   Plus,
   Minus,
   Trash2,
@@ -35,6 +36,7 @@ import {
 } from "@/components/ui/dialog"
 
 type MedioPago = "efectivo" | "debito" | "credito" | "transferencia"
+type ModoPrecioPeso = "gramo" | "cien_gramos"
 
 type Producto = {
   id: number
@@ -44,9 +46,14 @@ type Producto = {
   stock: number
   categoria?: string | null
   fechaVencimiento?: string | null
+  esPesable?: boolean
+  unidadMedida?: "unidad" | "gramo"
+  modoPrecioDefault?: ModoPrecioPeso | null
 }
 
-type ItemCarrito = {
+type ItemUnidad = {
+  lineaId: string
+  tipo: "unidad"
   productoId: number
   nombre: string
   precioUnitario: number
@@ -54,6 +61,20 @@ type ItemCarrito = {
   stock: number
   esCigarrillo: boolean
 }
+
+type ItemPeso = {
+  lineaId: string
+  tipo: "peso"
+  productoId: number
+  nombre: string
+  gramos: number
+  precioBase: number
+  modoPrecio: ModoPrecioPeso
+  stock: number
+  esCigarrillo: false
+}
+
+type ItemCarrito = ItemUnidad | ItemPeso
 
 type CajaAbierta = {
   id: number
@@ -73,6 +94,10 @@ type VentaResponse = {
 type VentaTicketItemResponse = {
   nombre: string
   cantidad: number
+  tipo?: "unidad" | "peso"
+  gramos?: number | null
+  modoPrecio?: ModoPrecioPeso | null
+  precioBase?: number | null
   precioUnitario: number
   subtotal: number
 }
@@ -153,6 +178,51 @@ function parseMoney(input: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+function parseEnteroPositivo(input: string): number | null {
+  const normalized = input.replace(",", ".").trim()
+  if (!normalized) return null
+  const n = Number(normalized)
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return null
+  return n
+}
+
+function crearLineaId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function consumoStockItem(it: ItemCarrito) {
+  return it.tipo === "unidad" ? it.cantidad : it.gramos
+}
+
+function calcularSubtotalItem(it: ItemCarrito) {
+  if (it.tipo === "unidad") {
+    return it.precioUnitario * it.cantidad
+  }
+
+  const subtotal =
+    it.modoPrecio === "gramo"
+      ? it.precioBase * it.gramos
+      : it.precioBase * (it.gramos / 100)
+
+  return Number(subtotal.toFixed(2))
+}
+
+function descripcionItem(it: ItemCarrito) {
+  if (it.tipo === "unidad") {
+    return `${formatPrecio(it.precioUnitario)} c/u`
+  }
+
+  return `Ref: ${formatPrecio(it.precioBase)} / ${it.modoPrecio === "gramo" ? "g" : "100g"}`
+}
+
+function tituloItem(it: ItemCarrito) {
+  if (it.tipo === "unidad") return it.nombre
+  return `${it.nombre} - ${it.gramos}g`
+}
+
 function extraerNombreArchivo(contentDisposition: string | null | undefined, fallback: string) {
   if (!contentDisposition) return fallback
 
@@ -225,6 +295,12 @@ export function PuntoDeVenta() {
   const [montoCierreCaja, setMontoCierreCaja] = useState("")
   const [procesandoCaja, setProcesandoCaja] = useState(false)
 
+  const [dialogPesoAbierto, setDialogPesoAbierto] = useState(false)
+  const [productoPesoId, setProductoPesoId] = useState("")
+  const [modoPrecioPeso, setModoPrecioPeso] = useState<ModoPrecioPeso>("cien_gramos")
+  const [precioVentaPeso, setPrecioVentaPeso] = useState("")
+  const [gramosVentaPeso, setGramosVentaPeso] = useState("")
+
   const [dialogNuevoAbierto, setDialogNuevoAbierto] = useState(false)
   const [guardandoNuevo, setGuardandoNuevo] = useState(false)
   const [codigoNuevo, setCodigoNuevo] = useState("")
@@ -268,6 +344,23 @@ export function PuntoDeVenta() {
 
   const productosRapidos = useMemo(() => productosFiltrados.slice(0, 9), [productosFiltrados])
 
+  const productosPesables = useMemo(() => productos.filter((p) => p.esPesable), [productos])
+
+  const productoPesoSeleccionado = useMemo(
+    () => productosPesables.find((p) => String(p.id) === productoPesoId) ?? null,
+    [productosPesables, productoPesoId]
+  )
+
+  const stockDisponiblePeso = useMemo(() => {
+    if (!productoPesoSeleccionado) return 0
+
+    const reservado = carrito
+      .filter((it) => it.productoId === productoPesoSeleccionado.id)
+      .reduce((acc, it) => acc + consumoStockItem(it), 0)
+
+    return Math.max(productoPesoSeleccionado.stock - reservado, 0)
+  }, [carrito, productoPesoSeleccionado])
+
   useEffect(() => {
     if (!cajaAbiertaId || cargando || dialogNuevoAbierto) return
 
@@ -280,21 +373,39 @@ export function PuntoDeVenta() {
     return () => window.cancelAnimationFrame(frame)
   }, [cajaAbiertaId, cargando, dialogNuevoAbierto])
 
+  useEffect(() => {
+    if (!dialogPesoAbierto) return
+
+    const frame = window.requestAnimationFrame(() => {
+      const targetId = productoPesoSeleccionado ? "peso-precio" : "peso-producto"
+      const el = document.getElementById(targetId) as HTMLInputElement | HTMLSelectElement | null
+      if (!el) return
+
+      el.focus()
+
+      if (el instanceof HTMLInputElement) {
+        el.select()
+      }
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [dialogPesoAbierto, productoPesoSeleccionado])
+
   const subtotal = useMemo(
-    () => carrito.reduce((acc, it) => acc + it.precioUnitario * it.cantidad, 0),
+    () => carrito.reduce((acc, it) => acc + calcularSubtotalItem(it), 0),
     [carrito]
   )
 
   const totalItems = useMemo(
-    () => carrito.reduce((acc, it) => acc + it.cantidad, 0),
+    () => carrito.reduce((acc, it) => acc + (it.tipo === "unidad" ? it.cantidad : 1), 0),
     [carrito]
   )
 
   const subtotalCigarrillos = useMemo(
     () =>
       carrito
-        .filter((it) => it.esCigarrillo)
-        .reduce((acc, it) => acc + it.precioUnitario * it.cantidad, 0),
+        .filter((it): it is ItemUnidad => it.tipo === "unidad" && it.esCigarrillo)
+        .reduce((acc, it) => acc + calcularSubtotalItem(it), 0),
     [carrito]
   )
 
@@ -306,6 +417,21 @@ export function PuntoDeVenta() {
   }, [subtotalCigarrillos, aplicaRecargoTarjeta])
 
   const total = useMemo(() => subtotal + recargoNum, [subtotal, recargoNum])
+
+  const totalVentaPeso = useMemo(() => {
+    const precio = parseMoney(precioVentaPeso)
+    const gramos = parseEnteroPositivo(gramosVentaPeso)
+    if (precio == null || gramos == null || precio <= 0) return null
+
+    const totalCalculado = modoPrecioPeso === "gramo" ? precio * gramos : precio * (gramos / 100)
+    return Number(totalCalculado.toFixed(2))
+  }, [precioVentaPeso, gramosVentaPeso, modoPrecioPeso])
+
+  const referenciaVentaPeso = useMemo(() => {
+    const precio = parseMoney(precioVentaPeso)
+    if (precio == null || precio <= 0) return null
+    return modoPrecioPeso === "gramo" ? Number((precio * 100).toFixed(2)) : precio
+  }, [precioVentaPeso, modoPrecioPeso])
 
   const vueltoEstimado = useMemo(() => {
     if (medioPago !== "efectivo") return null
@@ -346,26 +472,105 @@ export function PuntoDeVenta() {
     setNuevoVencimiento("")
   }
 
+  function resetDialogPeso() {
+    setProductoPesoId("")
+    setModoPrecioPeso("cien_gramos")
+    setPrecioVentaPeso("")
+    setGramosVentaPeso("")
+  }
+
+  function cambiarModoPrecioPeso(nuevoModo: ModoPrecioPeso) {
+    if (nuevoModo === modoPrecioPeso) return
+
+    const precioActual = parseMoney(precioVentaPeso)
+
+    if (precioActual != null && precioActual > 0) {
+      const convertido =
+        modoPrecioPeso === "cien_gramos" && nuevoModo === "gramo"
+          ? precioActual / 100
+          : modoPrecioPeso === "gramo" && nuevoModo === "cien_gramos"
+            ? precioActual * 100
+            : precioActual
+
+      setPrecioVentaPeso(String(Number(convertido.toFixed(2))))
+    }
+
+    setModoPrecioPeso(nuevoModo)
+  }
+
   function abrirDialogNuevoProducto(codigoEscaneado: string) {
     setCodigoNuevo(codigoEscaneado)
     resetNuevoProducto()
     setDialogNuevoAbierto(true)
   }
 
+  function abrirDialogPesoManual() {
+    resetDialogPeso()
+
+    if (productosPesables.length === 1) {
+      const unico = productosPesables[0]
+      setProductoPesoId(String(unico.id))
+      setModoPrecioPeso(unico.modoPrecioDefault ?? "cien_gramos")
+      setPrecioVentaPeso(String(toNumber(unico.precioVenta)))
+    }
+
+    setDialogPesoAbierto(true)
+  }
+
+  function abrirDialogPesoParaProducto(p: Producto) {
+    setProductoPesoId(String(p.id))
+    setModoPrecioPeso(p.modoPrecioDefault ?? "cien_gramos")
+    setPrecioVentaPeso(String(toNumber(p.precioVenta)))
+    setGramosVentaPeso("")
+    setDialogPesoAbierto(true)
+  }
+
+  function seleccionarProductoPeso(value: string) {
+    setProductoPesoId(value)
+    setGramosVentaPeso("")
+
+    const producto = productosPesables.find((p) => String(p.id) === value)
+    if (!producto) {
+      setModoPrecioPeso("cien_gramos")
+      setPrecioVentaPeso("")
+      return
+    }
+
+    setModoPrecioPeso(producto.modoPrecioDefault ?? "cien_gramos")
+    setPrecioVentaPeso(String(toNumber(producto.precioVenta)))
+  }
+
   function agregarAlCarrito(p: Producto) {
+    if (p.stock <= 0) {
+      toast.error("Sin stock")
+      return
+    }
+
+    if (p.esPesable) {
+      abrirDialogPesoParaProducto(p)
+      return
+    }
+
+    const precio = toNumber(p.precioVenta)
+    const esCigarrillo = esProductoCigarrillo(p)
+
     setCarrito((prev) => {
-      const idx = prev.findIndex((x) => x.productoId === p.id)
-      const precio = toNumber(p.precioVenta)
-      const esCigarrillo = esProductoCigarrillo(p)
+      const idx = prev.findIndex((x) => x.tipo === "unidad" && x.productoId === p.id)
+      const reservado = prev
+        .filter((x) => x.productoId === p.id)
+        .reduce((acc, x) => acc + consumoStockItem(x), 0)
 
       if (idx === -1) {
-        if (p.stock <= 0) {
-          toast.error("Sin stock")
+        if (reservado >= p.stock) {
+          toast.error("Stock insuficiente")
           return prev
         }
+
         return [
           ...prev,
           {
+            lineaId: crearLineaId(),
+            tipo: "unidad",
             productoId: p.id,
             nombre: p.nombre,
             precioUnitario: precio,
@@ -378,38 +583,99 @@ export function PuntoDeVenta() {
 
       const copy = [...prev]
       const item = copy[idx]
-      if (item.cantidad + 1 > item.stock) {
+      if (item.tipo !== "unidad") return prev
+
+      if (reservado + 1 > item.stock) {
         toast.error("Stock insuficiente")
         return prev
       }
+
       copy[idx] = { ...item, cantidad: item.cantidad + 1 }
       return copy
     })
   }
 
-  function sumar(productoId: number) {
+  function agregarVentaPesoAlCarrito() {
+    if (!cajaAbierta) {
+      toast.error("No hay caja abierta")
+      return
+    }
+
+    if (!productoPesoSeleccionado) {
+      toast.error("Selecciona un producto pesable")
+      return
+    }
+
+    const precioBase = parseMoney(precioVentaPeso)
+    const gramosNum = parseEnteroPositivo(gramosVentaPeso)
+
+    if (precioBase == null || precioBase <= 0) {
+      toast.error("Ingresa un precio valido")
+      return
+    }
+
+    if (gramosNum == null) {
+      toast.error("Por ahora los gramos deben ser enteros y mayores a 0")
+      return
+    }
+
+    if (gramosNum > stockDisponiblePeso) {
+      toast.error(`Stock insuficiente (${stockDisponiblePeso}g disponibles)`)
+      return
+    }
+
+    setCarrito((prev) => [
+      ...prev,
+      {
+        lineaId: crearLineaId(),
+        tipo: "peso",
+        productoId: productoPesoSeleccionado.id,
+        nombre: productoPesoSeleccionado.nombre,
+        gramos: gramosNum,
+        precioBase,
+        modoPrecio: modoPrecioPeso,
+        stock: productoPesoSeleccionado.stock,
+        esCigarrillo: false,
+      },
+    ])
+
+    setDialogPesoAbierto(false)
+    resetDialogPeso()
+    toast.success("Producto por peso agregado al carrito")
+  }
+
+  function sumar(lineaId: string) {
     setCarrito((prev) =>
       prev.map((it) => {
-        if (it.productoId !== productoId) return it
-        if (it.cantidad + 1 > it.stock) return it
+        if (it.lineaId !== lineaId || it.tipo !== "unidad") return it
+
+        const reservado = prev
+          .filter((x) => x.productoId === it.productoId)
+          .reduce((acc, x) => acc + consumoStockItem(x), 0)
+
+        if (reservado + 1 > it.stock) {
+          toast.error("Stock insuficiente")
+          return it
+        }
+
         return { ...it, cantidad: it.cantidad + 1 }
       })
     )
   }
 
-  function restar(productoId: number) {
+  function restar(lineaId: string) {
     setCarrito((prev) =>
       prev
         .map((it) => {
-          if (it.productoId !== productoId) return it
+          if (it.lineaId !== lineaId || it.tipo !== "unidad") return it
           return { ...it, cantidad: it.cantidad - 1 }
         })
-        .filter((it) => it.cantidad > 0)
+        .filter((it) => (it.tipo === "unidad" ? it.cantidad > 0 : true))
     )
   }
 
-  function quitar(productoId: number) {
-    setCarrito((prev) => prev.filter((it) => it.productoId !== productoId))
+  function quitar(lineaId: string) {
+    setCarrito((prev) => prev.filter((it) => it.lineaId !== lineaId))
   }
 
   function vaciarCarrito() {
@@ -570,12 +836,35 @@ export function PuntoDeVenta() {
     setCargando(true)
     try {
       const payload: {
-        items: Array<{ productoId: number; cantidad: number }>
+        items: Array<
+          | { productoId: number; tipo: "unidad"; cantidad: number }
+          | {
+              productoId: number
+              tipo: "peso"
+              gramos: number
+              modoPrecio: ModoPrecioPeso
+              precioBase: number
+            }
+        >
         recargo: number
         medioPago: MedioPago
         montoRecibido?: number
       } = {
-        items: carrito.map((it) => ({ productoId: it.productoId, cantidad: it.cantidad })),
+        items: carrito.map((it) =>
+          it.tipo === "unidad"
+            ? {
+                productoId: it.productoId,
+                tipo: "unidad",
+                cantidad: it.cantidad,
+              }
+            : {
+                productoId: it.productoId,
+                tipo: "peso",
+                gramos: it.gramos,
+                modoPrecio: it.modoPrecio,
+                precioBase: it.precioBase,
+              }
+        ),
         recargo: recargoNum,
         medioPago,
       }
@@ -773,6 +1062,16 @@ export function PuntoDeVenta() {
                   disabled={cargando || !cajaAbierta}
                 />
               </form>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={abrirDialogPesoManual}
+                disabled={!cajaAbierta}
+                className="w-full sm:w-auto"
+              >
+                <Scale className="mr-2 h-4 w-4" />
+                Venta por gramos
+              </Button>
               <p className="text-xs text-muted-foreground">Usa la pistola lectora o escribi el nombre/codigo manualmente</p>
             </CardContent>
           </Card>
@@ -790,18 +1089,23 @@ export function PuntoDeVenta() {
                     disabled={p.stock <= 0 || !cajaAbierta}
                     className="rounded-lg border p-3 text-left transition hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <div className="truncate text-sm font-medium">{p.nombre}</div>
+                    <div className="truncate text-sm font-medium">
+                      {p.nombre}
+                      {p.esPesable && <span className="ml-2 text-xs text-muted-foreground">(granel)</span>}
+                    </div>
                     <div className="mt-1 flex items-center justify-between">
                       <span className="text-sm font-semibold text-primary">{formatPrecio(toNumber(p.precioVenta))}</span>
-                      <span className="text-xs text-muted-foreground">x{p.stock}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {p.esPesable ? `${p.stock}g` : `x${p.stock}`}
+                      </span>
                     </div>
                   </button>
                 ))}
-              </div>
 
-              {productosRapidos.length === 0 && (
-                <p className="pt-2 text-sm text-muted-foreground">Sin resultados.</p>
-              )}
+                {productosRapidos.length === 0 && (
+                  <p className="pt-2 text-sm text-muted-foreground">Sin resultados.</p>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -820,35 +1124,40 @@ export function PuntoDeVenta() {
               <>
                 <div className="flex-1 space-y-2 overflow-auto pr-1">
                   {carrito.map((it) => (
-                    <div key={it.productoId} className="rounded-lg border p-3">
+                    <div key={it.lineaId} className="rounded-lg border p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-medium">{it.nombre}</p>
-                          <p className="text-xs text-muted-foreground">{formatPrecio(it.precioUnitario)} c/u</p>
+                          <p className="text-sm font-medium">{tituloItem(it)}</p>
+                          <p className="text-xs text-muted-foreground">{descripcionItem(it)}</p>
                         </div>
-                        <p className="text-sm font-bold">{formatPrecio(it.precioUnitario * it.cantidad)}</p>
+                        <p className="text-sm font-bold">{formatPrecio(calcularSubtotalItem(it))}</p>
                       </div>
                       <div className="mt-2 flex items-center justify-between">
-                        <div className="flex items-center gap-1">
-                          <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => restar(it.productoId)}>
-                            <Minus className="h-3.5 w-3.5" />
-                          </Button>
-                          <span className="w-6 text-center text-sm">{it.cantidad}</span>
-                          <Button
-                            size="icon"
-                            variant="outline"
-                            className="h-7 w-7"
-                            onClick={() => sumar(it.productoId)}
-                            disabled={it.cantidad >= it.stock}
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
+                        {it.tipo === "unidad" ? (
+                          <div className="flex items-center gap-1">
+                            <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => restar(it.lineaId)}>
+                              <Minus className="h-3.5 w-3.5" />
+                            </Button>
+                            <span className="w-6 text-center text-sm">{it.cantidad}</span>
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              className="h-7 w-7"
+                              onClick={() => sumar(it.lineaId)}
+                              disabled={it.cantidad >= it.stock}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">{it.gramos} g</span>
+                        )}
+
                         <Button
                           size="icon"
                           variant="ghost"
                           className="h-7 w-7 text-destructive hover:text-destructive"
-                          onClick={() => quitar(it.productoId)}
+                          onClick={() => quitar(it.lineaId)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -960,11 +1269,9 @@ export function PuntoDeVenta() {
             <div className="rounded-md border p-3">
               <div className="max-h-36 space-y-1 overflow-auto pr-1 text-sm">
                 {carrito.map((it) => (
-                  <div key={it.productoId} className="flex items-center justify-between">
-                    <span>
-                      {it.nombre} x{it.cantidad}
-                    </span>
-                    <span>{formatPrecio(it.precioUnitario * it.cantidad)}</span>
+                  <div key={it.lineaId} className="flex items-center justify-between">
+                    <span>{tituloItem(it)}</span>
+                    <span>{formatPrecio(calcularSubtotalItem(it))}</span>
                   </div>
                 ))}
               </div>
@@ -1042,6 +1349,137 @@ export function PuntoDeVenta() {
             </Button>
             <Button onClick={confirmarVenta} disabled={cargando || !cajaAbierta || carrito.length === 0}>
               Cobrar {formatPrecio(total)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={dialogPesoAbierto}
+        onOpenChange={(open) => {
+          setDialogPesoAbierto(open)
+          if (!open) resetDialogPeso()
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Venta por gramos</DialogTitle>
+            <DialogDescription>Carga un producto pesable y agregalo al carrito.</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="peso-producto">Producto pesable</Label>
+              <select
+                id="peso-producto"
+                value={productoPesoId}
+                onChange={(e) => seleccionarProductoPeso(e.target.value)}
+                className="h-10 rounded-md border bg-background px-3 text-sm"
+              >
+                <option value="">Selecciona un producto</option>
+                {productosPesables.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nombre} (stock: {p.stock}g)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Modo de precio</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={modoPrecioPeso === "cien_gramos" ? "default" : "outline"}
+                  onClick={() => cambiarModoPrecioPeso("cien_gramos")}
+                  disabled={!productoPesoSeleccionado}
+                >
+                  Precio por 100g
+                </Button>
+                <Button
+                  type="button"
+                  variant={modoPrecioPeso === "gramo" ? "default" : "outline"}
+                  onClick={() => cambiarModoPrecioPeso("gramo")}
+                  disabled={!productoPesoSeleccionado}
+                >
+                  Precio por gramo
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="peso-precio">{modoPrecioPeso === "gramo" ? "Precio por gramo" : "Precio cada 100g"}</Label>
+                <Input
+                  id="peso-precio"
+                  value={precioVentaPeso}
+                  onChange={(e) => setPrecioVentaPeso(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && productoPesoSeleccionado) {
+                      e.preventDefault()
+                      const input = document.getElementById("peso-gramos") as HTMLInputElement | null
+                      input?.focus()
+                      input?.select()
+                    }
+                  }}
+                  inputMode="decimal"
+                  placeholder={modoPrecioPeso === "gramo" ? "Ej: 12.5" : "Ej: 1250"}
+                  disabled={!productoPesoSeleccionado}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="peso-gramos">Peso en gramos</Label>
+                <Input
+                  id="peso-gramos"
+                  value={gramosVentaPeso}
+                  onChange={(e) => setGramosVentaPeso(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && productoPesoSeleccionado) {
+                      e.preventDefault()
+                      agregarVentaPesoAlCarrito()
+                    }
+                  }}
+                  inputMode="numeric"
+                  placeholder="Ej: 85"
+                  disabled={!productoPesoSeleccionado}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-md border p-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Producto</span>
+                <span className="font-medium">{productoPesoSeleccionado?.nombre || "Sin producto"}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Stock disponible</span>
+                <span>{productoPesoSeleccionado ? `${stockDisponiblePeso} g` : "-"}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Referencia</span>
+                <span>{referenciaVentaPeso == null ? "-" : `${formatPrecio(referenciaVentaPeso)} / 100g`}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Peso cargado</span>
+                <span>{gramosVentaPeso.trim() ? `${gramosVentaPeso.trim()} g` : "-"}</span>
+              </div>
+              <div className="mt-3 flex items-center justify-between border-t pt-3">
+                <span className="font-semibold">Total a cobrar</span>
+                <span className="text-2xl font-bold">{formatPrecio(totalVentaPeso ?? 0)}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Por ahora se validan gramos enteros para coincidir con el backend actual.
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogPesoAbierto(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={agregarVentaPesoAlCarrito} disabled={!cajaAbierta || !productoPesoSeleccionado}>
+              Agregar al carrito
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1344,4 +1782,3 @@ export function PuntoDeVenta() {
     </div>
   )
 }
-
