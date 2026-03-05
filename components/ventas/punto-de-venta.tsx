@@ -17,6 +17,8 @@ import {
   FileText,
   Printer,
   Download,
+  Smartphone,
+  Tv,
 } from "lucide-react"
 
 import api from "@/lib/api"
@@ -37,6 +39,8 @@ import {
 
 type MedioPago = "efectivo" | "debito" | "credito" | "transferencia"
 type ModoPrecioPeso = "gramo" | "cien_gramos"
+type AtajoPos = "carga_virtual" | "direct_tv"
+type TipoServicioRapido = "carga_virtual" | "direct_tv"
 
 type Producto = {
   id: number
@@ -45,6 +49,7 @@ type Producto = {
   precioVenta: number | string
   stock: number
   categoria?: string | null
+  atajoPos?: AtajoPos | null
   fechaVencimiento?: string | null
   esPesable?: boolean
   unidadMedida?: "unidad" | "gramo"
@@ -60,6 +65,7 @@ type ItemUnidad = {
   cantidad: number
   stock: number
   esCigarrillo: boolean
+  atajoPos?: AtajoPos | null
 }
 
 type ItemPeso = {
@@ -152,6 +158,16 @@ const cajaFetcher = async (url: string) => {
   }
 }
 
+const productoAtajoFetcher = async (url: string) => {
+  try {
+    const res = await api.get(url)
+    return res.data as Producto
+  } catch (err: unknown) {
+    if (getErrorStatus(err) === 404) return null
+    throw err
+  }
+}
+
 function toNumber(v: unknown): number {
   if (typeof v === "number") return v
   if (typeof v === "string") {
@@ -212,6 +228,9 @@ function calcularSubtotalItem(it: ItemCarrito) {
 
 function descripcionItem(it: ItemCarrito) {
   if (it.tipo === "unidad") {
+    if (it.atajoPos) {
+      return `Monto cargado: ${formatPrecio(it.cantidad)}`
+    }
     return `${formatPrecio(it.precioUnitario)} c/u`
   }
 
@@ -267,6 +286,12 @@ function esProductoCigarrillo(p: Producto) {
   return CIGARRILLO_KEYWORDS.some((k) => texto.includes(k))
 }
 
+function esProductoRecargaValido(p: Producto | null | undefined) {
+  if (!p) return false
+  if (p.esPesable) return false
+  return toNumber(p.precioVenta) === 1
+}
+
 const MEDIOS: Array<{
   id: MedioPago
   label: string
@@ -301,6 +326,10 @@ export function PuntoDeVenta() {
   const [precioVentaPeso, setPrecioVentaPeso] = useState("")
   const [gramosVentaPeso, setGramosVentaPeso] = useState("")
 
+  const [dialogRecargaAbierto, setDialogRecargaAbierto] = useState(false)
+  const [tipoRecarga, setTipoRecarga] = useState<TipoServicioRapido | null>(null)
+  const [montoRecarga, setMontoRecarga] = useState("")
+
   const [dialogNuevoAbierto, setDialogNuevoAbierto] = useState(false)
   const [guardandoNuevo, setGuardandoNuevo] = useState(false)
   const [codigoNuevo, setCodigoNuevo] = useState("")
@@ -327,6 +356,14 @@ export function PuntoDeVenta() {
   const [ticketAccion, setTicketAccion] = useState<"ver" | "imprimir" | "reimprimir" | "escpos" | null>(null)
 
   const { data: productos = [], mutate: mutateProductos } = useSWR<Producto[]>("/api/productos", fetcher)
+  const { data: productoCargaVirtual, mutate: mutateCargaVirtual } = useSWR<Producto | null>(
+    "/api/productos/atajo/carga_virtual",
+    productoAtajoFetcher
+  )
+  const { data: productoDirectTv, mutate: mutateDirectTv } = useSWR<Producto | null>(
+    "/api/productos/atajo/direct_tv",
+    productoAtajoFetcher
+  )
   const { data: cajaAbierta, mutate: mutateCaja, isLoading: cargandoCaja } = useSWR<CajaAbierta | null>(
     "/api/cajas/abierta",
     cajaFetcher
@@ -353,6 +390,24 @@ export function PuntoDeVenta() {
     [productosPesables, productoPesoId]
   )
 
+  const productoRecargaSeleccionado = useMemo(() => {
+    if (!tipoRecarga) return null
+    if (tipoRecarga === "carga_virtual") {
+      return productoCargaVirtual ?? productos.find((p) => p.atajoPos === "carga_virtual") ?? null
+    }
+    return productoDirectTv ?? productos.find((p) => p.atajoPos === "direct_tv") ?? null
+  }, [tipoRecarga, productoCargaVirtual, productoDirectTv, productos])
+
+  const saldoCargaVirtual = useMemo(
+    () => (productoCargaVirtual ?? productos.find((p) => p.atajoPos === "carga_virtual"))?.stock ?? 0,
+    [productoCargaVirtual, productos]
+  )
+
+  const saldoDirectTv = useMemo(
+    () => (productoDirectTv ?? productos.find((p) => p.atajoPos === "direct_tv"))?.stock ?? 0,
+    [productoDirectTv, productos]
+  )
+
   const stockDisponiblePeso = useMemo(() => {
     if (!productoPesoSeleccionado) return 0
 
@@ -362,6 +417,16 @@ export function PuntoDeVenta() {
 
     return Math.max(productoPesoSeleccionado.stock - reservado, 0)
   }, [carrito, productoPesoSeleccionado])
+
+  const stockDisponibleRecarga = useMemo(() => {
+    if (!productoRecargaSeleccionado) return 0
+
+    const reservado = carrito
+      .filter((it) => it.productoId === productoRecargaSeleccionado.id)
+      .reduce((acc, it) => acc + consumoStockItem(it), 0)
+
+    return Math.max(productoRecargaSeleccionado.stock - reservado, 0)
+  }, [carrito, productoRecargaSeleccionado])
 
   useEffect(() => {
     if (!cajaAbiertaId || cargando || dialogNuevoAbierto) return
@@ -393,13 +458,27 @@ export function PuntoDeVenta() {
     return () => window.cancelAnimationFrame(frame)
   }, [dialogPesoAbierto, productoPesoSeleccionado])
 
+  useEffect(() => {
+    if (!dialogRecargaAbierto) return
+    const frame = window.requestAnimationFrame(() => {
+      const input = document.getElementById("monto-recarga") as HTMLInputElement | null
+      input?.focus()
+      input?.select()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [dialogRecargaAbierto])
+
   const subtotal = useMemo(
     () => carrito.reduce((acc, it) => acc + calcularSubtotalItem(it), 0),
     [carrito]
   )
 
   const totalItems = useMemo(
-    () => carrito.reduce((acc, it) => acc + (it.tipo === "unidad" ? it.cantidad : 1), 0),
+    () =>
+      carrito.reduce((acc, it) => {
+        if (it.tipo === "unidad") return acc + (it.atajoPos ? 1 : it.cantidad)
+        return acc + 1
+      }, 0),
     [carrito]
   )
 
@@ -483,6 +562,11 @@ export function PuntoDeVenta() {
     setGramosVentaPeso("")
   }
 
+  function resetDialogRecarga() {
+    setTipoRecarga(null)
+    setMontoRecarga("")
+  }
+
   function cambiarModoPrecioPeso(nuevoModo: ModoPrecioPeso) {
     if (nuevoModo === modoPrecioPeso) return
 
@@ -544,9 +628,115 @@ export function PuntoDeVenta() {
     setPrecioVentaPeso(String(toNumber(producto.precioVenta)))
   }
 
+  function getProductoServicio(tipo: TipoServicioRapido) {
+    if (tipo === "carga_virtual") {
+      return productoCargaVirtual ?? productos.find((p) => p.atajoPos === "carga_virtual") ?? null
+    }
+    return productoDirectTv ?? productos.find((p) => p.atajoPos === "direct_tv") ?? null
+  }
+
+  function abrirDialogRecarga(tipo: TipoServicioRapido) {
+    if (!cajaAbierta) {
+      toast.error("No hay caja abierta")
+      return
+    }
+
+    const producto = getProductoServicio(tipo)
+    if (!producto) {
+      toast.error(`No hay producto configurado para ${tipo === "carga_virtual" ? "Carga virtual" : "Direct TV"}`)
+      return
+    }
+
+    if (!esProductoRecargaValido(producto)) {
+      toast.error(`Configura ${producto.nombre} como no pesable y precio venta = 1.`)
+      return
+    }
+
+    if (producto.stock <= 0) {
+      toast.error("Sin saldo disponible")
+      return
+    }
+
+    setTipoRecarga(tipo)
+    setMontoRecarga("")
+    setDialogRecargaAbierto(true)
+  }
+
+  function confirmarRecargaServicio() {
+    if (!tipoRecarga) return
+
+    const producto = getProductoServicio(tipoRecarga)
+    if (!producto) {
+      toast.error("Producto de recarga no configurado")
+      return
+    }
+
+    if (!esProductoRecargaValido(producto)) {
+      toast.error(`Configura ${producto.nombre} como no pesable y precio venta = 1.`)
+      return
+    }
+
+    const monto = parseEnteroPositivo(montoRecarga)
+    if (monto == null) {
+      toast.error("Ingresa un monto entero mayor a 0")
+      return
+    }
+
+    if (monto > stockDisponibleRecarga) {
+      toast.error(`Saldo insuficiente (${stockDisponibleRecarga} disponibles)`)
+      return
+    }
+
+    const precio = 1
+
+    setCarrito((prev) => {
+      const idx = prev.findIndex(
+        (x) => x.tipo === "unidad" && x.productoId === producto.id && x.atajoPos === (producto.atajoPos ?? null)
+      )
+
+      if (idx === -1) {
+        return [
+          ...prev,
+          {
+            lineaId: crearLineaId(),
+            tipo: "unidad",
+            productoId: producto.id,
+            nombre: producto.nombre,
+            precioUnitario: precio,
+            cantidad: monto,
+            stock: producto.stock,
+            esCigarrillo: false,
+            atajoPos: producto.atajoPos ?? null,
+          },
+        ]
+      }
+
+      const copy = [...prev]
+      const item = copy[idx]
+      if (item.tipo !== "unidad") return prev
+
+      copy[idx] = { ...item, cantidad: item.cantidad + monto }
+      return copy
+    })
+
+    setDialogRecargaAbierto(false)
+    resetDialogRecarga()
+    toast.success("Recarga agregada al carrito")
+  }
+
   function agregarAlCarrito(p: Producto) {
     if (p.stock <= 0) {
       toast.error("Sin stock")
+      return
+    }
+
+    if (p.atajoPos === "carga_virtual") {
+      abrirDialogRecarga("carga_virtual")
+      return
+    }
+
+    if (p.atajoPos === "direct_tv") {
+      abrirDialogRecarga("direct_tv")
       return
     }
 
@@ -581,6 +771,7 @@ export function PuntoDeVenta() {
             cantidad: 1,
             stock: p.stock,
             esCigarrillo,
+            atajoPos: p.atajoPos ?? null,
           },
         ]
       }
@@ -765,10 +956,11 @@ export function PuntoDeVenta() {
           esPesable: nuevoEsPesable,
           unidadMedida: nuevoEsPesable ? "gramo" : "unidad",
           modoPrecioDefault: nuevoEsPesable ? nuevoModoPrecioDefault : null,
+          atajoPos: null,
         })
         .then((r) => r.data as Producto)
 
-      await mutateProductos()
+      await Promise.all([mutateProductos(), mutateCargaVirtual(), mutateDirectTv()])
       agregarAlCarrito(creado)
       setDialogNuevoAbierto(false)
       setEntrada("")
@@ -905,7 +1097,7 @@ export function PuntoDeVenta() {
       setMedioPago("efectivo")
       setCobroAbierto(false)
 
-      await Promise.all([mutateProductos(), mutateCaja()])
+      await Promise.all([mutateProductos(), mutateCaja(), mutateCargaVirtual(), mutateDirectTv()])
     } catch (err: unknown) {
       toast.error(getErrorMessage(err, "Error al confirmar venta"))
     } finally {
@@ -936,7 +1128,7 @@ export function PuntoDeVenta() {
       setDialogAnularAbierto(false)
       setMotivoAnulacion("")
       setUltimaVenta(null)
-      await Promise.all([mutateProductos(), mutateCaja()])
+      await Promise.all([mutateProductos(), mutateCaja(), mutateCargaVirtual(), mutateDirectTv()])
     } catch (err: unknown) {
       toast.error(getErrorMessage(err, "No se pudo anular la venta"))
     } finally {
@@ -1077,17 +1269,47 @@ export function PuntoDeVenta() {
                   disabled={cargando || !cajaAbierta}
                 />
               </form>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={abrirDialogPesoManual}
-                disabled={!cajaAbierta}
-                className="w-full sm:w-auto"
-              >
-                <Scale className="mr-2 h-4 w-4" />
-                Venta por gramos
-              </Button>
-              <p className="text-xs text-muted-foreground">Usa la pistola lectora o escribi el nombre/codigo manualmente</p>
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={abrirDialogPesoManual}
+                  disabled={!cajaAbierta}
+                  className="w-full sm:w-auto"
+                >
+                  <Scale className="mr-2 h-4 w-4" />
+                  Venta por gramos
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => abrirDialogRecarga("carga_virtual")}
+                  disabled={!cajaAbierta}
+                  className="w-full sm:w-auto"
+                >
+                  <Smartphone className="mr-2 h-4 w-4" />
+                  Carga virtual (saldo: {saldoCargaVirtual})
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => abrirDialogRecarga("direct_tv")}
+                  disabled={!cajaAbierta}
+                  className="w-full sm:w-auto"
+                >
+                  <Tv className="mr-2 h-4 w-4" />
+                  Direct TV (saldo: {saldoDirectTv})
+                </Button>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Usa la pistola lectora o escribi el nombre/codigo manualmente.
+                {productoCargaVirtual === null && ' Falta crear/configurar el atajo "carga_virtual".'}
+                {productoDirectTv === null && ' Falta crear/configurar el atajo "direct_tv".'}
+              </p>
             </CardContent>
           </Card>
 
@@ -1107,11 +1329,14 @@ export function PuntoDeVenta() {
                     <div className="truncate text-sm font-medium">
                       {p.nombre}
                       {p.esPesable && <span className="ml-2 text-xs text-muted-foreground">(granel)</span>}
+                      {!p.esPesable && p.atajoPos && <span className="ml-2 text-xs text-muted-foreground">(recarga)</span>}
                     </div>
                     <div className="mt-1 flex items-center justify-between">
-                      <span className="text-sm font-semibold text-primary">{formatPrecio(toNumber(p.precioVenta))}</span>
+                      <span className="text-sm font-semibold text-primary">
+                        {p.atajoPos ? "Venta por saldo" : formatPrecio(toNumber(p.precioVenta))}
+                      </span>
                       <span className="text-xs text-muted-foreground">
-                        {p.esPesable ? `${p.stock}g` : `x${p.stock}`}
+                        {p.esPesable ? `${p.stock}g` : p.atajoPos ? `saldo ${p.stock}` : `x${p.stock}`}
                       </span>
                     </div>
                   </button>
@@ -1149,21 +1374,25 @@ export function PuntoDeVenta() {
                       </div>
                       <div className="mt-2 flex items-center justify-between">
                         {it.tipo === "unidad" ? (
-                          <div className="flex items-center gap-1">
-                            <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => restar(it.lineaId)}>
-                              <Minus className="h-3.5 w-3.5" />
-                            </Button>
-                            <span className="w-6 text-center text-sm">{it.cantidad}</span>
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              className="h-7 w-7"
-                              onClick={() => sumar(it.lineaId)}
-                              disabled={it.cantidad >= it.stock}
-                            >
-                              <Plus className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
+                          it.atajoPos ? (
+                            <span className="text-sm text-muted-foreground">Saldo consumido: {it.cantidad}</span>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => restar(it.lineaId)}>
+                                <Minus className="h-3.5 w-3.5" />
+                              </Button>
+                              <span className="w-6 text-center text-sm">{it.cantidad}</span>
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                className="h-7 w-7"
+                                onClick={() => sumar(it.lineaId)}
+                                disabled={it.cantidad >= it.stock}
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          )
                         ) : (
                           <span className="text-sm text-muted-foreground">{it.gramos} g</span>
                         )}
@@ -1494,6 +1723,64 @@ export function PuntoDeVenta() {
               Cancelar
             </Button>
             <Button onClick={agregarVentaPesoAlCarrito} disabled={!cajaAbierta || !productoPesoSeleccionado}>
+              Agregar al carrito
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={dialogRecargaAbierto}
+        onOpenChange={(open) => {
+          setDialogRecargaAbierto(open)
+          if (!open) resetDialogRecarga()
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{tipoRecarga === "carga_virtual" ? "Carga virtual" : "Direct TV"}</DialogTitle>
+            <DialogDescription>Ingresa el monto a cargar. Se descuenta del saldo disponible.</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="monto-recarga">Monto a cargar *</Label>
+              <Input
+                id="monto-recarga"
+                value={montoRecarga}
+                onChange={(e) => setMontoRecarga(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    confirmarRecargaServicio()
+                  }
+                }}
+                inputMode="numeric"
+                placeholder="Ej: 1500"
+              />
+            </div>
+
+            <div className="rounded-md border p-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Producto</span>
+                <span className="font-medium">{productoRecargaSeleccionado?.nombre ?? "-"}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-muted-foreground">Saldo disponible</span>
+                <span>{stockDisponibleRecarga}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-muted-foreground">Precio unidad (fijo)</span>
+                <span>{formatPrecio(1)}</span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogRecargaAbierto(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={confirmarRecargaServicio} disabled={!productoRecargaSeleccionado || !cajaAbierta}>
               Agregar al carrito
             </Button>
           </DialogFooter>

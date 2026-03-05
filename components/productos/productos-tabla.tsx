@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 type ModoPrecioPeso = "gramo" | "cien_gramos"
+type AtajoPos = "carga_virtual" | "direct_tv"
 
 type ProductoBackend = {
   id: number
@@ -32,6 +33,7 @@ type ProductoBackend = {
   stock: number
   stockMinimo: number
   categoria: string | null
+  atajoPos?: AtajoPos | null
   fechaVencimiento: string | null
   esPesable?: boolean
   unidadMedida?: "unidad" | "gramo"
@@ -183,10 +185,22 @@ export default function ProductosTabla() {
   const [formVencimiento, setFormVencimiento] = useState("")
   const [formEsPesable, setFormEsPesable] = useState(false)
   const [formModoPrecioDefault, setFormModoPrecioDefault] = useState<ModoPrecioPeso>("cien_gramos")
+  const [formAtajoPos, setFormAtajoPos] = useState<AtajoPos | "">("")
+
+  const esProductoRecarga = formAtajoPos === "carga_virtual" || formAtajoPos === "direct_tv"
 
   useEffect(() => {
     setPage(0)
   }, [busqueda])
+
+  useEffect(() => {
+    if (!esProductoRecarga) return
+    setFormEsPesable(false)
+    setFormModoPrecioDefault("cien_gramos")
+    setFormPrecioCosto("0")
+    setFormPrecio("1")
+    setFormVencimiento("")
+  }, [esProductoRecarga])
 
   const productosUrl = useMemo(() => {
     const params = new URLSearchParams()
@@ -231,6 +245,7 @@ export default function ProductosTabla() {
     setFormVencimiento("")
     setFormEsPesable(false)
     setFormModoPrecioDefault("cien_gramos")
+    setFormAtajoPos("")
   }
 
   function abrirFormularioNuevo() {
@@ -251,6 +266,7 @@ export default function ProductosTabla() {
     setFormVencimiento(producto.fechaVencimiento ?? "")
     setFormEsPesable(Boolean(producto.esPesable))
     setFormModoPrecioDefault(producto.modoPrecioDefault ?? "cien_gramos")
+    setFormAtajoPos((producto.atajoPos as AtajoPos | null) ?? "")
     setDialogAbierto(true)
   }
 
@@ -272,22 +288,31 @@ export default function ProductosTabla() {
 
   async function guardarProducto() {
     const nombre = formNombre.trim()
-    const precioVenta = parseNumber(formPrecio)
-    const precioCosto = parseNumber(formPrecioCosto) ?? 0
     const stock = parseInteger(formStock) ?? 0
     const stockMinimo = parseInteger(formStockMinimo) ?? 5
-    const fechaVencimiento = formVencimiento.trim() ? formVencimiento : null
 
-    if (!nombre || precioVenta === null) {
-      toast.error("Completa los campos obligatorios (Nombre y Precio de venta)")
+    const precioVenta = esProductoRecarga ? 1 : parseNumber(formPrecio)
+    const precioCosto = esProductoRecarga ? 0 : parseNumber(formPrecioCosto) ?? 0
+    const fechaVencimiento = esProductoRecarga ? null : formVencimiento.trim() ? formVencimiento : null
+    const esPesableFinal = esProductoRecarga ? false : formEsPesable
+
+    if (!nombre) {
+      toast.error("Completa el nombre del producto")
       return
     }
+
+    if (precioVenta === null) {
+      toast.error("Completa el precio de venta")
+      return
+    }
+
     if (precioVenta < 0 || precioCosto < 0) {
       toast.error("Los precios no pueden ser negativos")
       return
     }
+
     if (stock < 0 || stockMinimo < 0) {
-      toast.error("Stock y stock minimo deben ser >= 0")
+      toast.error(esProductoRecarga ? "Saldo y saldo minimo deben ser >= 0" : "Stock y stock minimo deben ser >= 0")
       return
     }
 
@@ -302,9 +327,10 @@ export default function ProductosTabla() {
         stockMinimo,
         categoria: formCategoria.trim() ? formCategoria.trim() : "General",
         fechaVencimiento,
-        esPesable: formEsPesable,
-        unidadMedida: formEsPesable ? "gramo" : "unidad",
-        modoPrecioDefault: formEsPesable ? formModoPrecioDefault : null,
+        esPesable: esPesableFinal,
+        unidadMedida: esPesableFinal ? "gramo" : "unidad",
+        modoPrecioDefault: esPesableFinal ? formModoPrecioDefault : null,
+        atajoPos: formAtajoPos || null,
       }
 
       if (productoEditando) {
@@ -387,12 +413,14 @@ export default function ProductosTabla() {
       }
 
       if (costo !== null) payload.precioCosto = costo
-      if (stockVencimiento.trim()) payload.fechaVencimiento = stockVencimiento
+      if (stockVencimiento.trim() && !productoStock.atajoPos) payload.fechaVencimiento = stockVencimiento
 
       await api.patch(`/api/productos/${productoStock.id}`, payload)
 
       toast.success(
-        `Stock actualizado: +${cant} ${productoStock.esPesable ? "g" : "unidades"}`
+        productoStock.atajoPos
+          ? `Saldo actualizado: +${cant}`
+          : `Stock actualizado: +${cant} ${productoStock.esPesable ? "g" : "unidades"}`
       )
       await mutate()
       await mutateStockBajo()
@@ -403,7 +431,7 @@ export default function ProductosTabla() {
       setCostoStock("")
       setStockVencimiento("")
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, "Error al ingresar stock"))
+      toast.error(getApiErrorMessage(err, "Error al ingresar stock/saldo"))
     } finally {
       setGuardando(false)
     }
@@ -469,85 +497,108 @@ export default function ProductosTabla() {
               />
             </div>
 
-            <div className="grid gap-3 rounded-lg border p-3">
-              <div className="flex items-center gap-2">
-                <input
-                  id="formEsPesable"
-                  type="checkbox"
-                  checked={formEsPesable}
-                  onChange={(e) => setFormEsPesable(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                <Label htmlFor="formEsPesable" className="cursor-pointer">
-                  Producto pesable (venta por gramos)
-                </Label>
-              </div>
-
-              {formEsPesable && (
-                <>
-                  <div className="grid gap-2">
-                    <Label>Modo de precio por defecto</Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        type="button"
-                        variant={formModoPrecioDefault === "cien_gramos" ? "default" : "outline"}
-                        onClick={() => setFormModoPrecioDefault("cien_gramos")}
-                      >
-                        Precio por 100g
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={formModoPrecioDefault === "gramo" ? "default" : "outline"}
-                        onClick={() => setFormModoPrecioDefault("gramo")}
-                      >
-                        Precio por gramo
-                      </Button>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-muted-foreground">
-                    Si es pesable, el stock se guarda en gramos. Ejemplo: 5000 = 5 kg.
-                  </p>
-                </>
+            <div className="grid gap-2">
+              <Label htmlFor="atajoPos">Atajo POS (opcional)</Label>
+              <select
+                id="atajoPos"
+                value={formAtajoPos}
+                onChange={(e) => setFormAtajoPos((e.target.value as AtajoPos | "") || "")}
+                className="h-10 rounded-md border bg-background px-3 text-sm"
+              >
+                <option value="">Sin atajo</option>
+                <option value="carga_virtual">Carga virtual</option>
+                <option value="direct_tv">Direct TV</option>
+              </select>
+              {esProductoRecarga && (
+                <p className="text-xs text-muted-foreground">
+                  Modo recarga activo: se ocultan precios y se usa saldo (precio venta fijo = 1).
+                </p>
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="precioCosto">Precio de costo</Label>
-                <Input
-                  id="precioCosto"
-                  type="number"
-                  value={formPrecioCosto}
-                  onChange={(e) => setFormPrecioCosto(e.target.value)}
-                  placeholder="Lo que pagas vos"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="precio">
-                  {formEsPesable
-                    ? formModoPrecioDefault === "gramo"
-                      ? "Precio base por gramo *"
-                      : "Precio base cada 100g *"
-                    : "Precio de venta *"}
-                </Label>
-                <Input
-                  id="precio"
-                  type="number"
-                  value={formPrecio}
-                  onChange={(e) => setFormPrecio(e.target.value)}
-                  placeholder={
-                    formEsPesable
-                      ? formModoPrecioDefault === "gramo"
-                        ? "Ej: 12.5"
-                        : "Ej: 1250"
-                      : "Lo que cobras"
-                  }
-                />
-              </div>
-            </div>
+            {!esProductoRecarga && (
+              <div className="grid gap-3 rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    id="formEsPesable"
+                    type="checkbox"
+                    checked={formEsPesable}
+                    onChange={(e) => setFormEsPesable(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="formEsPesable" className="cursor-pointer">
+                    Producto pesable (venta por gramos)
+                  </Label>
+                </div>
 
-            {formPrecioCosto && formPrecio && Number(formPrecioCosto) > 0 && (
+                {formEsPesable && (
+                  <>
+                    <div className="grid gap-2">
+                      <Label>Modo de precio por defecto</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant={formModoPrecioDefault === "cien_gramos" ? "default" : "outline"}
+                          onClick={() => setFormModoPrecioDefault("cien_gramos")}
+                        >
+                          Precio por 100g
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={formModoPrecioDefault === "gramo" ? "default" : "outline"}
+                          onClick={() => setFormModoPrecioDefault("gramo")}
+                        >
+                          Precio por gramo
+                        </Button>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground">
+                      Si es pesable, el stock se guarda en gramos. Ejemplo: 5000 = 5 kg.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+
+            {!esProductoRecarga && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="precioCosto">Precio de costo</Label>
+                  <Input
+                    id="precioCosto"
+                    type="number"
+                    value={formPrecioCosto}
+                    onChange={(e) => setFormPrecioCosto(e.target.value)}
+                    placeholder="Lo que pagas vos"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="precio">
+                    {formEsPesable
+                      ? formModoPrecioDefault === "gramo"
+                        ? "Precio base por gramo *"
+                        : "Precio base cada 100g *"
+                      : "Precio de venta *"}
+                  </Label>
+                  <Input
+                    id="precio"
+                    type="number"
+                    value={formPrecio}
+                    onChange={(e) => setFormPrecio(e.target.value)}
+                    placeholder={
+                      formEsPesable
+                        ? formModoPrecioDefault === "gramo"
+                          ? "Ej: 12.5"
+                          : "Ej: 1250"
+                        : "Lo que cobras"
+                    }
+                  />
+                </div>
+              </div>
+            )}
+
+            {!esProductoRecarga && formPrecioCosto && formPrecio && Number(formPrecioCosto) > 0 && (
               <div className="rounded-lg border px-3 py-2 text-sm text-foreground">
                 Ganancia: {formatPrecio(Number(formPrecio) - Number(formPrecioCosto))} por{" "}
                 {formEsPesable ? (formModoPrecioDefault === "gramo" ? "gramo" : "100g") : "unidad"} (
@@ -565,20 +616,32 @@ export default function ProductosTabla() {
                   placeholder="Ej: Bebidas"
                 />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="vencimiento">Fecha de vencimiento</Label>
-                <Input
-                  id="vencimiento"
-                  type="date"
-                  value={formVencimiento}
-                  onChange={(e) => setFormVencimiento(e.target.value)}
-                />
-              </div>
+              {!esProductoRecarga && (
+                <div className="grid gap-2">
+                  <Label htmlFor="vencimiento">Fecha de vencimiento</Label>
+                  <Input
+                    id="vencimiento"
+                    type="date"
+                    value={formVencimiento}
+                    onChange={(e) => setFormVencimiento(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="stock">{productoEditando ? (formEsPesable ? "Stock (gramos)" : "Stock") : formEsPesable ? "Stock inicial (gramos)" : "Stock inicial"}</Label>
+                <Label htmlFor="stock">
+                  {esProductoRecarga
+                    ? "Ingresar saldo *"
+                    : productoEditando
+                      ? formEsPesable
+                        ? "Stock (gramos)"
+                        : "Stock"
+                      : formEsPesable
+                        ? "Stock inicial (gramos)"
+                        : "Stock inicial"}
+                </Label>
                 <Input
                   id="stock"
                   type="number"
@@ -588,7 +651,13 @@ export default function ProductosTabla() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="stockMinimo">{formEsPesable ? "Stock minimo (gramos)" : "Stock minimo (alerta)"}</Label>
+                <Label htmlFor="stockMinimo">
+                  {esProductoRecarga
+                    ? "Stock minimo (alerta)"
+                    : formEsPesable
+                      ? "Stock minimo (gramos)"
+                      : "Stock minimo (alerta)"}
+                </Label>
                 <Input
                   id="stockMinimo"
                   type="number"
@@ -675,6 +744,7 @@ export default function ProductosTabla() {
                 {!isLoading &&
                   productos.map((p) => {
                     const margen = p.precioCosto > 0 ? calcularMargen(p.precioCosto, p.precioVenta) : null
+                    const esRecarga = p.atajoPos === "carga_virtual" || p.atajoPos === "direct_tv"
 
                     return (
                       <TableRow key={p.id}>
@@ -682,8 +752,11 @@ export default function ProductosTabla() {
                           <div>
                             <p className="font-medium">
                               {p.nombre}
-                              {p.esPesable && (
-                                <span className="ml-2 text-xs text-muted-foreground">(granel)</span>
+                              {p.esPesable && <span className="ml-2 text-xs text-muted-foreground">(granel)</span>}
+                              {esRecarga && (
+                                <span className="ml-2 text-xs text-muted-foreground">
+                                  ({p.atajoPos === "carga_virtual" ? "carga virtual" : "direct tv"})
+                                </span>
                               )}
                             </p>
                             <p className="text-xs text-muted-foreground lg:hidden">{p.codigoBarras ?? "-"}</p>
@@ -703,13 +776,17 @@ export default function ProductosTabla() {
                         </TableCell>
 
                         <TableCell className="hidden xl:table-cell text-right text-sm text-muted-foreground">
-                          {p.precioCosto > 0 ? formatPrecio(p.precioCosto) : "-"}
+                          {esRecarga ? "-" : p.precioCosto > 0 ? formatPrecio(p.precioCosto) : "-"}
                         </TableCell>
 
-                        <TableCell className="text-right font-medium">{formatPrecio(p.precioVenta)}</TableCell>
+                        <TableCell className="text-right font-medium">
+                          {esRecarga ? "Saldo" : formatPrecio(p.precioVenta)}
+                        </TableCell>
 
                         <TableCell className="hidden md:table-cell text-right">
-                          {margen !== null ? (
+                          {esRecarga ? (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          ) : margen !== null ? (
                             <Badge variant="secondary">{margen}%</Badge>
                           ) : (
                             <span className="text-xs text-muted-foreground">-</span>
@@ -739,7 +816,7 @@ export default function ProductosTabla() {
                               size="icon"
                               className="h-8 w-8"
                               onClick={() => abrirIngresoStock(p)}
-                              title="Ingresar stock"
+                              title={esRecarga ? "Ingresar saldo" : "Ingresar stock"}
                             >
                               <PackagePlus className="h-4 w-4" />
                             </Button>
@@ -825,13 +902,13 @@ export default function ProductosTabla() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <PackagePlus className="h-5 w-5 text-primary" />
-              Ingresar stock
+              {productoStock?.atajoPos ? "Ingresar saldo" : "Ingresar stock"}
             </DialogTitle>
             <DialogDescription>
               {productoStock
-                ? `Agregar ${productoStock.esPesable ? "gramos" : "unidades"} a: ${productoStock.nombre} (stock actual: ${
-                    productoStock.esPesable ? `${productoStock.stock}g` : productoStock.stock
-                  })`
+                ? `${productoStock.atajoPos ? "Agregar saldo" : `Agregar ${productoStock.esPesable ? "gramos" : "unidades"}`} a: ${
+                    productoStock.nombre
+                  } (actual: ${productoStock.esPesable ? `${productoStock.stock}g` : productoStock.stock})`
                 : "Selecciona un producto"}
             </DialogDescription>
           </DialogHeader>
@@ -839,39 +916,47 @@ export default function ProductosTabla() {
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="cantidadStock">
-                {productoStock?.esPesable ? "Gramos a ingresar *" : "Cantidad a ingresar *"}
+                {productoStock?.atajoPos
+                  ? "Saldo a ingresar *"
+                  : productoStock?.esPesable
+                    ? "Gramos a ingresar *"
+                    : "Cantidad a ingresar *"}
               </Label>
               <Input
                 id="cantidadStock"
                 type="number"
                 value={cantidadStock}
                 onChange={(e) => setCantidadStock(e.target.value)}
-                placeholder={productoStock?.esPesable ? "Ej: 500" : "Ej: 20"}
+                placeholder={productoStock?.atajoPos ? "Ej: 100000" : productoStock?.esPesable ? "Ej: 500" : "Ej: 20"}
                 min="1"
               />
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="costoStock">Precio de costo (opcional)</Label>
-              <Input
-                id="costoStock"
-                type="number"
-                value={costoStock}
-                onChange={(e) => setCostoStock(e.target.value)}
-                placeholder="Dejar vacio para no cambiar"
-                min="0"
-              />
-            </div>
+            {!productoStock?.atajoPos && (
+              <>
+                <div className="grid gap-2">
+                  <Label htmlFor="costoStock">Precio de costo (opcional)</Label>
+                  <Input
+                    id="costoStock"
+                    type="number"
+                    value={costoStock}
+                    onChange={(e) => setCostoStock(e.target.value)}
+                    placeholder="Dejar vacio para no cambiar"
+                    min="0"
+                  />
+                </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="stockVencimiento">Fecha de vencimiento (opcional)</Label>
-              <Input
-                id="stockVencimiento"
-                type="date"
-                value={stockVencimiento}
-                onChange={(e) => setStockVencimiento(e.target.value)}
-              />
-            </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="stockVencimiento">Fecha de vencimiento (opcional)</Label>
+                  <Input
+                    id="stockVencimiento"
+                    type="date"
+                    value={stockVencimiento}
+                    onChange={(e) => setStockVencimiento(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           <DialogFooter>
@@ -885,7 +970,7 @@ export default function ProductosTabla() {
                   Guardando...
                 </>
               ) : (
-                "Confirmar ingreso"
+                "Confirmar"
               )}
             </Button>
           </DialogFooter>
