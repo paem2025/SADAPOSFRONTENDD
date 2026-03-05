@@ -683,8 +683,8 @@ export function PuntoDeVenta() {
       toast.error("Ingresa una cantidad valida para la oferta")
       return
     }
-    const precioUnitario = parseMoney(ofertaPrecio)
-    if (precioUnitario == null || precioUnitario <= 0) {
+    const precioTotal = parseMoney(ofertaPrecio)
+    if (precioTotal == null || precioTotal <= 0) {
       toast.error("Ingresa un precio promocional valido")
       return
     }
@@ -697,7 +697,7 @@ export function PuntoDeVenta() {
           {
             productoId: producto.id,
             cantidad,
-            precioUnitario,
+            precioUnitario: precioTotal,
             productoNombre: producto.nombre,
           },
         ]
@@ -707,7 +707,7 @@ export function PuntoDeVenta() {
       copy[idx] = {
         ...copy[idx],
         cantidad: copy[idx].cantidad + cantidad,
-        precioUnitario,
+        precioUnitario: toNumber(copy[idx].precioUnitario) + precioTotal,
         productoNombre: producto.nombre,
       }
       return copy
@@ -731,8 +731,13 @@ export function PuntoDeVenta() {
     return item.productoNombre ?? productos.find((p) => p.id === item.productoId)?.nombre ?? `Producto #${item.productoId}`
   }
 
-  function precioProductoOferta(item: OfertaItem) {
+  function precioTotalOferta(item: OfertaItem) {
     return toNumber(item.precioUnitario)
+  }
+
+  function precioUnitarioOferta(cantidad: number, precioTotal: number) {
+    if (cantidad <= 0) return 0
+    return Number((precioTotal / cantidad).toFixed(2))
   }
 
   async function guardarOferta() {
@@ -795,21 +800,21 @@ export function PuntoDeVenta() {
       return
     }
 
-    const requeridoPorProducto = new Map<number, { cantidad: number; precioUnitario: number }>()
+    const requeridoPorProducto = new Map<number, { cantidad: number; precioTotal: number }>()
     for (const item of oferta.items) {
-      const precioUnitario = toNumber(item.precioUnitario)
-      if (precioUnitario <= 0) {
+      const precioTotal = precioTotalOferta(item)
+      if (precioTotal <= 0) {
         toast.error(`La oferta tiene precio invalido para ${nombreProductoOferta(item)}`)
         return
       }
 
       const previo = requeridoPorProducto.get(item.productoId)
       if (!previo) {
-        requeridoPorProducto.set(item.productoId, { cantidad: item.cantidad, precioUnitario })
+        requeridoPorProducto.set(item.productoId, { cantidad: item.cantidad, precioTotal })
       } else {
         requeridoPorProducto.set(item.productoId, {
           cantidad: previo.cantidad + item.cantidad,
-          precioUnitario,
+          precioTotal: previo.precioTotal + precioTotal,
         })
       }
     }
@@ -841,13 +846,15 @@ export function PuntoDeVenta() {
       for (const [productoId, data] of requeridoPorProducto) {
         const producto = productos.find((p) => p.id === productoId)
         if (!producto) continue
+        const precioUnitario = precioUnitarioOferta(data.cantidad, data.precioTotal)
+        if (precioUnitario <= 0) continue
 
         const idx = next.findIndex(
           (it) =>
             it.tipo === "unidad" &&
             it.productoId === productoId &&
             !it.atajoPos &&
-            Math.abs(it.precioUnitario - data.precioUnitario) < 0.001
+            Math.abs(it.precioUnitario - precioUnitario) < 0.001
         )
 
         if (idx === -1) {
@@ -856,7 +863,7 @@ export function PuntoDeVenta() {
             tipo: "unidad",
             productoId,
             nombre: producto.nombre,
-            precioUnitario: data.precioUnitario,
+            precioUnitario,
             precioPersonalizado: true,
             cantidad: data.cantidad,
             stock: producto.stock,
@@ -868,7 +875,7 @@ export function PuntoDeVenta() {
           if (actual.tipo !== "unidad") continue
           next[idx] = {
             ...actual,
-            precioUnitario: data.precioUnitario,
+            precioUnitario,
             precioPersonalizado: true,
             cantidad: actual.cantidad + data.cantidad,
           }
@@ -2214,7 +2221,7 @@ export function PuntoDeVenta() {
                     }
                   }}
                   inputMode="decimal"
-                  placeholder="Precio promo"
+                  placeholder="Total promo"
                 />
                 <Button
                   type="button"
@@ -2225,6 +2232,9 @@ export function PuntoDeVenta() {
                   Agregar item
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                El precio promo es el total de la cantidad cargada (ej: 3x2 = 4500).
+              </p>
 
               {ofertaDraftItems.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
@@ -2238,8 +2248,8 @@ export function PuntoDeVenta() {
                       variant="secondary"
                       className="max-w-full gap-2 whitespace-normal break-words px-2 py-1 text-left"
                     >
-                      {nombreProductoOferta(item)} x{item.cantidad} @{" "}
-                      {formatPrecio(precioProductoOferta(item))}
+                      {nombreProductoOferta(item)} x{item.cantidad} ={" "}
+                      {formatPrecio(precioTotalOferta(item))}
                       <button
                         type="button"
                         className="text-muted-foreground hover:text-foreground"
@@ -2284,8 +2294,8 @@ export function PuntoDeVenta() {
                                 variant="outline"
                                 className="max-w-full whitespace-normal break-words text-left"
                               >
-                                {nombreProductoOferta(item)} x{item.cantidad} @{" "}
-                                {formatPrecio(precioProductoOferta(item))}
+                                {nombreProductoOferta(item)} x{item.cantidad} ={" "}
+                                {formatPrecio(precioTotalOferta(item))}
                               </Badge>
                             ))}
                           </div>
