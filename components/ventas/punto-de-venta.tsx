@@ -46,6 +46,8 @@ type TipoServicioRapido = "carga_virtual" | "direct_tv"
 type OfertaItem = {
   productoId: number
   cantidad: number
+  precioUnitario: number | string
+  productoNombre?: string | null
 }
 
 type OfertaGuardada = {
@@ -74,6 +76,7 @@ type ItemUnidad = {
   productoId: number
   nombre: string
   precioUnitario: number
+  precioPersonalizado?: boolean
   cantidad: number
   stock: number
   esCigarrillo: boolean
@@ -243,7 +246,7 @@ function descripcionItem(it: ItemCarrito) {
     if (it.atajoPos) {
       return `Monto cargado: ${formatPrecio(it.cantidad)}`
     }
-    return `${formatPrecio(it.precioUnitario)} c/u`
+    return `${formatPrecio(it.precioUnitario)} c/u${it.precioPersonalizado ? " (promo)" : ""}`
   }
 
   return `Ref: ${formatPrecio(it.precioBase)} / ${it.modoPrecio === "gramo" ? "g" : "100g"}`
@@ -347,6 +350,7 @@ export function PuntoDeVenta() {
   const [ofertaBusqueda, setOfertaBusqueda] = useState("")
   const [ofertaProductoId, setOfertaProductoId] = useState("")
   const [ofertaCantidad, setOfertaCantidad] = useState("1")
+  const [ofertaPrecio, setOfertaPrecio] = useState("")
   const [ofertaDraftItems, setOfertaDraftItems] = useState<OfertaItem[]>([])
   const [guardandoOferta, setGuardandoOferta] = useState(false)
   const [ofertaEnProcesoId, setOfertaEnProcesoId] = useState<number | null>(null)
@@ -626,7 +630,20 @@ export function PuntoDeVenta() {
     setOfertaBusqueda("")
     setOfertaProductoId("")
     setOfertaCantidad("1")
+    setOfertaPrecio("")
     setOfertaDraftItems([])
+  }
+
+  function seleccionarProductoOferta(value: string) {
+    setOfertaProductoId(value)
+
+    const producto = productosOfertables.find((p) => String(p.id) === value)
+    if (!producto) {
+      setOfertaPrecio("")
+      return
+    }
+
+    setOfertaPrecio(String(toNumber(producto.precioVenta)))
   }
 
   function seleccionarProductoOfertaPorBusqueda() {
@@ -646,7 +663,7 @@ export function PuntoDeVenta() {
       return
     }
 
-    setOfertaProductoId(String(elegido.id))
+    seleccionarProductoOferta(String(elegido.id))
     setOfertaCantidad("1")
 
     const cantidadInput = document.getElementById("oferta-cantidad") as HTMLInputElement | null
@@ -666,19 +683,40 @@ export function PuntoDeVenta() {
       toast.error("Ingresa una cantidad valida para la oferta")
       return
     }
+    const precioUnitario = parseMoney(ofertaPrecio)
+    if (precioUnitario == null || precioUnitario <= 0) {
+      toast.error("Ingresa un precio promocional valido")
+      return
+    }
 
     setOfertaDraftItems((prev) => {
       const idx = prev.findIndex((it) => it.productoId === producto.id)
-      if (idx === -1) return [...prev, { productoId: producto.id, cantidad }]
+      if (idx === -1) {
+        return [
+          ...prev,
+          {
+            productoId: producto.id,
+            cantidad,
+            precioUnitario,
+            productoNombre: producto.nombre,
+          },
+        ]
+      }
 
       const copy = [...prev]
-      copy[idx] = { ...copy[idx], cantidad: copy[idx].cantidad + cantidad }
+      copy[idx] = {
+        ...copy[idx],
+        cantidad: copy[idx].cantidad + cantidad,
+        precioUnitario,
+        productoNombre: producto.nombre,
+      }
       return copy
     })
 
     setOfertaCantidad("1")
     setOfertaProductoId("")
     setOfertaBusqueda("")
+    setOfertaPrecio("")
 
     const busquedaInput = document.getElementById("oferta-busqueda") as HTMLInputElement | null
     busquedaInput?.focus()
@@ -689,8 +727,12 @@ export function PuntoDeVenta() {
     setOfertaDraftItems((prev) => prev.filter((it) => it.productoId !== productoId))
   }
 
-  function nombreProductoOferta(productoId: number) {
-    return productos.find((p) => p.id === productoId)?.nombre ?? `Producto #${productoId}`
+  function nombreProductoOferta(item: OfertaItem) {
+    return item.productoNombre ?? productos.find((p) => p.id === item.productoId)?.nombre ?? `Producto #${item.productoId}`
+  }
+
+  function precioProductoOferta(item: OfertaItem) {
+    return toNumber(item.precioUnitario)
   }
 
   async function guardarOferta() {
@@ -713,7 +755,11 @@ export function PuntoDeVenta() {
     try {
       await api.post("/api/ofertas", {
         nombre,
-        items: ofertaDraftItems,
+        items: ofertaDraftItems.map((it) => ({
+          productoId: it.productoId,
+          cantidad: it.cantidad,
+          precioUnitario: toNumber(it.precioUnitario),
+        })),
       })
       await mutateOfertas()
       resetDialogOfertasDraft()
@@ -749,15 +795,26 @@ export function PuntoDeVenta() {
       return
     }
 
-    const requeridoPorProducto = new Map<number, number>()
+    const requeridoPorProducto = new Map<number, { cantidad: number; precioUnitario: number }>()
     for (const item of oferta.items) {
-      requeridoPorProducto.set(
-        item.productoId,
-        (requeridoPorProducto.get(item.productoId) ?? 0) + item.cantidad
-      )
+      const precioUnitario = toNumber(item.precioUnitario)
+      if (precioUnitario <= 0) {
+        toast.error(`La oferta tiene precio invalido para ${nombreProductoOferta(item)}`)
+        return
+      }
+
+      const previo = requeridoPorProducto.get(item.productoId)
+      if (!previo) {
+        requeridoPorProducto.set(item.productoId, { cantidad: item.cantidad, precioUnitario })
+      } else {
+        requeridoPorProducto.set(item.productoId, {
+          cantidad: previo.cantidad + item.cantidad,
+          precioUnitario,
+        })
+      }
     }
 
-    for (const [productoId, cantidad] of requeridoPorProducto) {
+    for (const [productoId, data] of requeridoPorProducto) {
       const producto = productos.find((p) => p.id === productoId)
       if (!producto) {
         toast.error(`La oferta contiene un producto que ya no existe (id ${productoId})`)
@@ -772,7 +829,7 @@ export function PuntoDeVenta() {
         .filter((it) => it.productoId === producto.id)
         .reduce((acc, it) => acc + consumoStockItem(it), 0)
 
-      if (reservado + cantidad > producto.stock) {
+      if (reservado + data.cantidad > producto.stock) {
         toast.error(`Stock insuficiente para ${producto.nombre}`)
         return
       }
@@ -781,12 +838,16 @@ export function PuntoDeVenta() {
     setCarrito((prev) => {
       const next = [...prev]
 
-      for (const [productoId, cantidad] of requeridoPorProducto) {
+      for (const [productoId, data] of requeridoPorProducto) {
         const producto = productos.find((p) => p.id === productoId)
         if (!producto) continue
 
         const idx = next.findIndex(
-          (it) => it.tipo === "unidad" && it.productoId === productoId && !it.atajoPos
+          (it) =>
+            it.tipo === "unidad" &&
+            it.productoId === productoId &&
+            !it.atajoPos &&
+            Math.abs(it.precioUnitario - data.precioUnitario) < 0.001
         )
 
         if (idx === -1) {
@@ -795,8 +856,9 @@ export function PuntoDeVenta() {
             tipo: "unidad",
             productoId,
             nombre: producto.nombre,
-            precioUnitario: toNumber(producto.precioVenta),
-            cantidad,
+            precioUnitario: data.precioUnitario,
+            precioPersonalizado: true,
+            cantidad: data.cantidad,
             stock: producto.stock,
             esCigarrillo: esProductoCigarrillo(producto),
             atajoPos: null,
@@ -804,7 +866,12 @@ export function PuntoDeVenta() {
         } else {
           const actual = next[idx]
           if (actual.tipo !== "unidad") continue
-          next[idx] = { ...actual, cantidad: actual.cantidad + cantidad }
+          next[idx] = {
+            ...actual,
+            precioUnitario: data.precioUnitario,
+            precioPersonalizado: true,
+            cantidad: actual.cantidad + data.cantidad,
+          }
         }
       }
 
@@ -951,6 +1018,7 @@ export function PuntoDeVenta() {
             productoId: producto.id,
             nombre: producto.nombre,
             precioUnitario: precio,
+            precioPersonalizado: false,
             cantidad: monto,
             stock: producto.stock,
             esCigarrillo: false,
@@ -997,7 +1065,13 @@ export function PuntoDeVenta() {
     const esCigarrillo = esProductoCigarrillo(p)
 
     setCarrito((prev) => {
-      const idx = prev.findIndex((x) => x.tipo === "unidad" && x.productoId === p.id)
+      const idx = prev.findIndex(
+        (x) =>
+          x.tipo === "unidad" &&
+          x.productoId === p.id &&
+          !x.atajoPos &&
+          Math.abs(x.precioUnitario - precio) < 0.001
+      )
       const reservado = prev
         .filter((x) => x.productoId === p.id)
         .reduce((acc, x) => acc + consumoStockItem(x), 0)
@@ -1016,6 +1090,7 @@ export function PuntoDeVenta() {
             productoId: p.id,
             nombre: p.nombre,
             precioUnitario: precio,
+            precioPersonalizado: false,
             cantidad: 1,
             stock: p.stock,
             esCigarrillo,
@@ -1033,7 +1108,7 @@ export function PuntoDeVenta() {
         return prev
       }
 
-      copy[idx] = { ...item, cantidad: item.cantidad + 1 }
+      copy[idx] = { ...item, cantidad: item.cantidad + 1, precioPersonalizado: item.precioPersonalizado ?? false }
       return copy
     })
   }
@@ -1292,7 +1367,7 @@ export function PuntoDeVenta() {
     try {
       const payload: {
         items: Array<
-          | { productoId: number; tipo: "unidad"; cantidad: number }
+          | { productoId: number; tipo: "unidad"; cantidad: number; precioUnitario?: number }
           | {
               productoId: number
               tipo: "peso"
@@ -1307,11 +1382,17 @@ export function PuntoDeVenta() {
       } = {
         items: carrito.map((it) =>
           it.tipo === "unidad"
-            ? {
-                productoId: it.productoId,
-                tipo: "unidad",
-                cantidad: it.cantidad,
-              }
+            ? (() => {
+                const unidad: { productoId: number; tipo: "unidad"; cantidad: number; precioUnitario?: number } = {
+                  productoId: it.productoId,
+                  tipo: "unidad",
+                  cantidad: it.cantidad,
+                }
+                if (!it.atajoPos && it.precioPersonalizado) {
+                  unidad.precioUnitario = it.precioUnitario
+                }
+                return unidad
+              })()
             : {
                 productoId: it.productoId,
                 tipo: "peso",
@@ -2052,7 +2133,7 @@ export function PuntoDeVenta() {
           if (!open) resetDialogOfertasDraft()
         }}
       >
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Ofertas de kiosco</DialogTitle>
             <DialogDescription>
@@ -2095,12 +2176,12 @@ export function PuntoDeVenta() {
                 </p>
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-[1fr_120px_auto]">
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_110px_140px_auto]">
                 <select
                   id="oferta-producto"
                   value={ofertaProductoId}
-                  onChange={(e) => setOfertaProductoId(e.target.value)}
-                  className="h-10 rounded-md border bg-background px-3 text-sm"
+                  onChange={(e) => seleccionarProductoOferta(e.target.value)}
+                  className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm"
                 >
                   <option value="">Selecciona un producto</option>
                   {productosOfertablesFiltrados.map((p) => (
@@ -2122,7 +2203,25 @@ export function PuntoDeVenta() {
                   inputMode="numeric"
                   placeholder="Cantidad"
                 />
-                <Button type="button" onClick={agregarItemOfertaDraft} disabled={!ofertaProductoSeleccionado}>
+                <Input
+                  id="oferta-precio"
+                  value={ofertaPrecio}
+                  onChange={(e) => setOfertaPrecio(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      agregarItemOfertaDraft()
+                    }
+                  }}
+                  inputMode="decimal"
+                  placeholder="Precio promo"
+                />
+                <Button
+                  type="button"
+                  onClick={agregarItemOfertaDraft}
+                  disabled={!ofertaProductoSeleccionado || (parseMoney(ofertaPrecio) ?? 0) <= 0}
+                  className="w-full md:w-auto"
+                >
                   Agregar item
                 </Button>
               </div>
@@ -2134,13 +2233,18 @@ export function PuntoDeVenta() {
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {ofertaDraftItems.map((item) => (
-                    <Badge key={item.productoId} variant="secondary" className="gap-2 px-2 py-1">
-                      {nombreProductoOferta(item.productoId)} x{item.cantidad}
+                    <Badge
+                      key={item.productoId}
+                      variant="secondary"
+                      className="max-w-full gap-2 whitespace-normal break-words px-2 py-1 text-left"
+                    >
+                      {nombreProductoOferta(item)} x{item.cantidad} @{" "}
+                      {formatPrecio(precioProductoOferta(item))}
                       <button
                         type="button"
                         className="text-muted-foreground hover:text-foreground"
                         onClick={() => quitarItemOfertaDraft(item.productoId)}
-                        aria-label={`Quitar ${nombreProductoOferta(item.productoId)}`}
+                        aria-label={`Quitar ${nombreProductoOferta(item)}`}
                       >
                         x
                       </button>
@@ -2170,18 +2274,23 @@ export function PuntoDeVenta() {
                 <div className="max-h-72 space-y-2 overflow-auto pr-1">
                   {ofertasGuardadas.map((oferta) => (
                     <div key={oferta.id} className="rounded-md border p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium">{oferta.nombre}</p>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">{oferta.nombre}</p>
                           <div className="mt-1 flex flex-wrap gap-1">
                             {oferta.items.map((item) => (
-                              <Badge key={`${oferta.id}-${item.productoId}`} variant="outline">
-                                {nombreProductoOferta(item.productoId)} x{item.cantidad}
+                              <Badge
+                                key={`${oferta.id}-${item.productoId}`}
+                                variant="outline"
+                                className="max-w-full whitespace-normal break-words text-left"
+                              >
+                                {nombreProductoOferta(item)} x{item.cantidad} @{" "}
+                                {formatPrecio(precioProductoOferta(item))}
                               </Badge>
                             ))}
                           </div>
                         </div>
-                        <div className="flex gap-1">
+                        <div className="flex shrink-0 gap-1 self-end sm:self-auto">
                           <Button
                             type="button"
                             size="sm"
@@ -2208,7 +2317,7 @@ export function PuntoDeVenta() {
                 </div>
               )}
               <p className="text-xs text-muted-foreground">
-                Las ofertas se guardan en backend y usan el precio normal de cada producto.
+                Las ofertas se guardan en backend con precio promocional propio y no modifican el precio real del producto.
               </p>
               {!esAdmin && (
                 <p className="text-xs text-muted-foreground">Solo admin puede crear o eliminar ofertas.</p>
