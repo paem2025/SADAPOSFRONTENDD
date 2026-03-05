@@ -19,6 +19,7 @@ import {
   Download,
   Smartphone,
   Tv,
+  Percent,
 } from "lucide-react"
 
 import api from "@/lib/api"
@@ -41,6 +42,17 @@ type MedioPago = "efectivo" | "debito" | "credito" | "transferencia"
 type ModoPrecioPeso = "gramo" | "cien_gramos"
 type AtajoPos = "carga_virtual" | "direct_tv"
 type TipoServicioRapido = "carga_virtual" | "direct_tv"
+
+type OfertaItem = {
+  productoId: number
+  cantidad: number
+}
+
+type OfertaGuardada = {
+  id: number
+  nombre: string
+  items: OfertaItem[]
+}
 
 type Producto = {
   id: number
@@ -330,6 +342,15 @@ export function PuntoDeVenta() {
   const [tipoRecarga, setTipoRecarga] = useState<TipoServicioRapido | null>(null)
   const [montoRecarga, setMontoRecarga] = useState("")
 
+  const [dialogOfertasAbierto, setDialogOfertasAbierto] = useState(false)
+  const [ofertaNombre, setOfertaNombre] = useState("")
+  const [ofertaBusqueda, setOfertaBusqueda] = useState("")
+  const [ofertaProductoId, setOfertaProductoId] = useState("")
+  const [ofertaCantidad, setOfertaCantidad] = useState("1")
+  const [ofertaDraftItems, setOfertaDraftItems] = useState<OfertaItem[]>([])
+  const [guardandoOferta, setGuardandoOferta] = useState(false)
+  const [ofertaEnProcesoId, setOfertaEnProcesoId] = useState<number | null>(null)
+
   const [dialogNuevoAbierto, setDialogNuevoAbierto] = useState(false)
   const [guardandoNuevo, setGuardandoNuevo] = useState(false)
   const [codigoNuevo, setCodigoNuevo] = useState("")
@@ -368,6 +389,11 @@ export function PuntoDeVenta() {
     "/api/cajas/abierta",
     cajaFetcher
   )
+  const {
+    data: ofertasGuardadas = [],
+    mutate: mutateOfertas,
+    isLoading: cargandoOfertas,
+  } = useSWR<OfertaGuardada[]>("/api/ofertas", fetcher)
   const cajaAbiertaId = cajaAbierta?.id ?? null
 
   const query = entrada.trim().toLowerCase()
@@ -384,10 +410,29 @@ export function PuntoDeVenta() {
   const productosRapidos = useMemo(() => productosFiltrados.slice(0, 9), [productosFiltrados])
 
   const productosPesables = useMemo(() => productos.filter((p) => p.esPesable), [productos])
+  const productosOfertables = useMemo(
+    () => productos.filter((p) => !p.esPesable && !p.atajoPos),
+    [productos]
+  )
+  const productosOfertablesFiltrados = useMemo(() => {
+    const q = ofertaBusqueda.trim().toLowerCase()
+    if (!q) return productosOfertables
+
+    return productosOfertables.filter((p) => {
+      const nombre = (p.nombre ?? "").toLowerCase()
+      const codigo = (p.codigoBarras ?? "").toLowerCase()
+      const categoria = (p.categoria ?? "").toLowerCase()
+      return nombre.includes(q) || codigo.includes(q) || categoria.includes(q)
+    })
+  }, [productosOfertables, ofertaBusqueda])
 
   const productoPesoSeleccionado = useMemo(
     () => productosPesables.find((p) => String(p.id) === productoPesoId) ?? null,
     [productosPesables, productoPesoId]
+  )
+  const ofertaProductoSeleccionado = useMemo(
+    () => productosOfertables.find((p) => String(p.id) === ofertaProductoId) ?? null,
+    [productosOfertables, ofertaProductoId]
   )
 
   const productoRecargaSeleccionado = useMemo(() => {
@@ -467,6 +512,15 @@ export function PuntoDeVenta() {
     })
     return () => window.cancelAnimationFrame(frame)
   }, [dialogRecargaAbierto])
+
+  useEffect(() => {
+    if (!dialogOfertasAbierto) return
+    const frame = window.requestAnimationFrame(() => {
+      const input = document.getElementById("oferta-nombre") as HTMLInputElement | null
+      input?.focus()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [dialogOfertasAbierto])
 
   const subtotal = useMemo(
     () => carrito.reduce((acc, it) => acc + calcularSubtotalItem(it), 0),
@@ -565,6 +619,200 @@ export function PuntoDeVenta() {
   function resetDialogRecarga() {
     setTipoRecarga(null)
     setMontoRecarga("")
+  }
+
+  function resetDialogOfertasDraft() {
+    setOfertaNombre("")
+    setOfertaBusqueda("")
+    setOfertaProductoId("")
+    setOfertaCantidad("1")
+    setOfertaDraftItems([])
+  }
+
+  function seleccionarProductoOfertaPorBusqueda() {
+    const busqueda = ofertaBusqueda.trim().toLowerCase()
+    if (!busqueda) return
+
+    const exactoPorCodigo = productosOfertables.find(
+      (p) => (p.codigoBarras ?? "").toLowerCase() === busqueda
+    )
+    const exactoPorNombre = productosOfertables.find(
+      (p) => (p.nombre ?? "").toLowerCase() === busqueda
+    )
+    const elegido = exactoPorCodigo ?? exactoPorNombre ?? productosOfertablesFiltrados[0]
+
+    if (!elegido) {
+      toast.error("No se encontro producto para esa busqueda")
+      return
+    }
+
+    setOfertaProductoId(String(elegido.id))
+    setOfertaCantidad("1")
+
+    const cantidadInput = document.getElementById("oferta-cantidad") as HTMLInputElement | null
+    cantidadInput?.focus()
+    cantidadInput?.select()
+  }
+
+  function agregarItemOfertaDraft() {
+    const producto = ofertaProductoSeleccionado
+    if (!producto) {
+      toast.error("Selecciona un producto para la oferta")
+      return
+    }
+
+    const cantidad = parseEnteroPositivo(ofertaCantidad)
+    if (cantidad == null) {
+      toast.error("Ingresa una cantidad valida para la oferta")
+      return
+    }
+
+    setOfertaDraftItems((prev) => {
+      const idx = prev.findIndex((it) => it.productoId === producto.id)
+      if (idx === -1) return [...prev, { productoId: producto.id, cantidad }]
+
+      const copy = [...prev]
+      copy[idx] = { ...copy[idx], cantidad: copy[idx].cantidad + cantidad }
+      return copy
+    })
+
+    setOfertaCantidad("1")
+    setOfertaProductoId("")
+    setOfertaBusqueda("")
+
+    const busquedaInput = document.getElementById("oferta-busqueda") as HTMLInputElement | null
+    busquedaInput?.focus()
+    busquedaInput?.select()
+  }
+
+  function quitarItemOfertaDraft(productoId: number) {
+    setOfertaDraftItems((prev) => prev.filter((it) => it.productoId !== productoId))
+  }
+
+  function nombreProductoOferta(productoId: number) {
+    return productos.find((p) => p.id === productoId)?.nombre ?? `Producto #${productoId}`
+  }
+
+  async function guardarOferta() {
+    if (!esAdmin) {
+      toast.error("Solo admin puede guardar ofertas")
+      return
+    }
+
+    const nombre = ofertaNombre.trim()
+    if (!nombre) {
+      toast.error("Ingresa un nombre para la oferta")
+      return
+    }
+    if (ofertaDraftItems.length === 0) {
+      toast.error("Agrega al menos un producto a la oferta")
+      return
+    }
+
+    setGuardandoOferta(true)
+    try {
+      await api.post("/api/ofertas", {
+        nombre,
+        items: ofertaDraftItems,
+      })
+      await mutateOfertas()
+      resetDialogOfertasDraft()
+      toast.success("Oferta guardada")
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "No se pudo guardar la oferta"))
+    } finally {
+      setGuardandoOferta(false)
+    }
+  }
+
+  async function eliminarOferta(ofertaId: number) {
+    if (!esAdmin) {
+      toast.error("Solo admin puede eliminar ofertas")
+      return
+    }
+
+    setOfertaEnProcesoId(ofertaId)
+    try {
+      await api.delete(`/api/ofertas/${ofertaId}`)
+      await mutateOfertas()
+      toast.success("Oferta eliminada")
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "No se pudo eliminar la oferta"))
+    } finally {
+      setOfertaEnProcesoId(null)
+    }
+  }
+
+  function agregarOfertaAlCarrito(oferta: OfertaGuardada) {
+    if (!cajaAbierta) {
+      toast.error("No hay caja abierta")
+      return
+    }
+
+    const requeridoPorProducto = new Map<number, number>()
+    for (const item of oferta.items) {
+      requeridoPorProducto.set(
+        item.productoId,
+        (requeridoPorProducto.get(item.productoId) ?? 0) + item.cantidad
+      )
+    }
+
+    for (const [productoId, cantidad] of requeridoPorProducto) {
+      const producto = productos.find((p) => p.id === productoId)
+      if (!producto) {
+        toast.error(`La oferta contiene un producto que ya no existe (id ${productoId})`)
+        return
+      }
+      if (producto.esPesable || producto.atajoPos) {
+        toast.error(`La oferta contiene un producto no compatible: ${producto.nombre}`)
+        return
+      }
+
+      const reservado = carrito
+        .filter((it) => it.productoId === producto.id)
+        .reduce((acc, it) => acc + consumoStockItem(it), 0)
+
+      if (reservado + cantidad > producto.stock) {
+        toast.error(`Stock insuficiente para ${producto.nombre}`)
+        return
+      }
+    }
+
+    setCarrito((prev) => {
+      const next = [...prev]
+
+      for (const [productoId, cantidad] of requeridoPorProducto) {
+        const producto = productos.find((p) => p.id === productoId)
+        if (!producto) continue
+
+        const idx = next.findIndex(
+          (it) => it.tipo === "unidad" && it.productoId === productoId && !it.atajoPos
+        )
+
+        if (idx === -1) {
+          next.push({
+            lineaId: crearLineaId(),
+            tipo: "unidad",
+            productoId,
+            nombre: producto.nombre,
+            precioUnitario: toNumber(producto.precioVenta),
+            cantidad,
+            stock: producto.stock,
+            esCigarrillo: esProductoCigarrillo(producto),
+            atajoPos: null,
+          })
+        } else {
+          const actual = next[idx]
+          if (actual.tipo !== "unidad") continue
+          next[idx] = { ...actual, cantidad: actual.cantidad + cantidad }
+        }
+      }
+
+      return next
+    })
+
+    setDialogOfertasAbierto(false)
+    toast.success(`Oferta agregada: ${oferta.nombre}`)
   }
 
   function cambiarModoPrecioPeso(nuevoModo: ModoPrecioPeso) {
@@ -1303,6 +1551,16 @@ export function PuntoDeVenta() {
                   <Tv className="mr-2 h-4 w-4" />
                   Direct TV (saldo: {saldoDirectTv})
                 </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDialogOfertasAbierto(true)}
+                  className="w-full sm:w-auto"
+                >
+                  <Percent className="mr-2 h-4 w-4" />
+                  Ofertas kiosco
+                </Button>
               </div>
 
               <p className="text-xs text-muted-foreground">
@@ -1782,6 +2040,185 @@ export function PuntoDeVenta() {
             </Button>
             <Button onClick={confirmarRecargaServicio} disabled={!productoRecargaSeleccionado || !cajaAbierta}>
               Agregar al carrito
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={dialogOfertasAbierto}
+        onOpenChange={(open) => {
+          setDialogOfertasAbierto(open)
+          if (!open) resetDialogOfertasDraft()
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Ofertas de kiosco</DialogTitle>
+            <DialogDescription>
+              Crea combos por producto y cantidad para agregarlos rapido al carrito.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4">
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="grid gap-2">
+                <Label htmlFor="oferta-nombre">Nombre de la oferta *</Label>
+                <Input
+                  id="oferta-nombre"
+                  value={ofertaNombre}
+                  onChange={(e) => setOfertaNombre(e.target.value)}
+                  placeholder="Ej: Combo merienda"
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="oferta-busqueda">Buscar producto (nombre o codigo)</Label>
+                <div className="relative">
+                  <Barcode className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="oferta-busqueda"
+                    value={ofertaBusqueda}
+                    onChange={(e) => setOfertaBusqueda(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        seleccionarProductoOfertaPorBusqueda()
+                      }
+                    }}
+                    placeholder="Escanea codigo de barras o escribe para filtrar"
+                    className="pl-9"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Enter selecciona el mejor resultado de la busqueda.
+                </p>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-[1fr_120px_auto]">
+                <select
+                  id="oferta-producto"
+                  value={ofertaProductoId}
+                  onChange={(e) => setOfertaProductoId(e.target.value)}
+                  className="h-10 rounded-md border bg-background px-3 text-sm"
+                >
+                  <option value="">Selecciona un producto</option>
+                  {productosOfertablesFiltrados.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nombre} (stock: {p.stock})
+                    </option>
+                  ))}
+                </select>
+                <Input
+                  id="oferta-cantidad"
+                  value={ofertaCantidad}
+                  onChange={(e) => setOfertaCantidad(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      agregarItemOfertaDraft()
+                    }
+                  }}
+                  inputMode="numeric"
+                  placeholder="Cantidad"
+                />
+                <Button type="button" onClick={agregarItemOfertaDraft} disabled={!ofertaProductoSeleccionado}>
+                  Agregar item
+                </Button>
+              </div>
+
+              {ofertaDraftItems.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Agrega productos para armar la oferta.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {ofertaDraftItems.map((item) => (
+                    <Badge key={item.productoId} variant="secondary" className="gap-2 px-2 py-1">
+                      {nombreProductoOferta(item.productoId)} x{item.cantidad}
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => quitarItemOfertaDraft(item.productoId)}
+                        aria-label={`Quitar ${nombreProductoOferta(item.productoId)}`}
+                      >
+                        x
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  onClick={guardarOferta}
+                  disabled={ofertaDraftItems.length === 0 || guardandoOferta || !esAdmin}
+                >
+                  {guardandoOferta ? "Guardando..." : "Guardar oferta"}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold">Ofertas guardadas</h3>
+              {cargandoOfertas ? (
+                <p className="text-sm text-muted-foreground">Cargando ofertas...</p>
+              ) : ofertasGuardadas.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Todavia no hay ofertas guardadas.</p>
+              ) : (
+                <div className="max-h-72 space-y-2 overflow-auto pr-1">
+                  {ofertasGuardadas.map((oferta) => (
+                    <div key={oferta.id} className="rounded-md border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium">{oferta.nombre}</p>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {oferta.items.map((item) => (
+                              <Badge key={`${oferta.id}-${item.productoId}`} variant="outline">
+                                {nombreProductoOferta(item.productoId)} x{item.cantidad}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => agregarOfertaAlCarrito(oferta)}
+                            disabled={!cajaAbierta || guardandoOferta || ofertaEnProcesoId === oferta.id}
+                          >
+                            Agregar
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => eliminarOferta(oferta.id)}
+                            disabled={!esAdmin || guardandoOferta || ofertaEnProcesoId === oferta.id}
+                            aria-label={`Eliminar oferta ${oferta.nombre}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Las ofertas se guardan en backend y usan el precio normal de cada producto.
+              </p>
+              {!esAdmin && (
+                <p className="text-xs text-muted-foreground">Solo admin puede crear o eliminar ofertas.</p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOfertasAbierto(false)}>
+              Cerrar
             </Button>
           </DialogFooter>
         </DialogContent>
