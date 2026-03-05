@@ -548,7 +548,8 @@ export function PuntoDeVenta() {
     [carrito]
   )
 
-  const aplicaRecargoTarjeta = medioPago === "debito" || medioPago === "credito"
+  const aplicaRecargoTarjeta =
+    medioPago === "debito" || medioPago === "credito" || medioPago === "transferencia"
 
   const recargoNum = useMemo(() => {
     if (!aplicaRecargoTarjeta) return 0
@@ -1893,7 +1894,7 @@ export function PuntoDeVenta() {
 
             <div className="rounded-md border p-3 text-sm">
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Recargo cigarrillos (10% solo debito/credito)</span>
+                <span className="text-muted-foreground">Recargo cigarrillos (10% debito/credito/transferencia)</span>
                 <span>{aplicaRecargoTarjeta ? formatPrecio(recargoNum) : "Sin recargo"}</span>
               </div>
             </div>
