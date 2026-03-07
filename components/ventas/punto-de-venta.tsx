@@ -145,6 +145,10 @@ type VentaTicketResponse = {
 }
 
 const RECARGO_CIGARRILLOS_PORC = 0.1
+const RECARGO_DIRECT_TV_PORC = 0.1
+const CARGA_VIRTUAL_CORTE_RECARGO = 5000
+const RECARGO_CARGA_VIRTUAL_BAJO = 300
+const RECARGO_CARGA_VIRTUAL_ALTO = 500
 
 const CIGARRILLO_KEYWORDS = [
   "cigarr",
@@ -245,6 +249,10 @@ function calcularSubtotalItem(it: ItemCarrito) {
 function descripcionItem(it: ItemCarrito) {
   if (it.tipo === "unidad") {
     if (esAtajoSaldo(it.atajoPos ?? null)) {
+      const recargoServicio = calcularRecargoServicio(it.atajoPos ?? null, it.cantidad)
+      if (recargoServicio > 0) {
+        return `Monto cargado: ${formatPrecio(it.cantidad)} + recargo ${formatPrecio(recargoServicio)}`
+      }
       return `Monto cargado: ${formatPrecio(it.cantidad)}`
     }
     return `${formatPrecio(it.precioUnitario)} c/u${it.precioPersonalizado ? " (promo)" : ""}`
@@ -304,6 +312,17 @@ function esProductoCigarrillo(p: Producto) {
 
 function esAtajoSaldo(atajo: AtajoPos | null | undefined) {
   return atajo === "carga_virtual" || atajo === "direct_tv"
+}
+
+function calcularRecargoServicio(atajo: AtajoPos | null | undefined, monto: number) {
+  if (monto <= 0) return 0
+  if (atajo === "direct_tv") {
+    return Number((monto * RECARGO_DIRECT_TV_PORC).toFixed(2))
+  }
+  if (atajo === "carga_virtual") {
+    return monto >= CARGA_VIRTUAL_CORTE_RECARGO ? RECARGO_CARGA_VIRTUAL_ALTO : RECARGO_CARGA_VIRTUAL_BAJO
+  }
+  return 0
 }
 
 function etiquetaAtajo(atajo: AtajoPos | null | undefined) {
@@ -614,13 +633,29 @@ export function PuntoDeVenta() {
     [carrito]
   )
 
+  const recargoServiciosNum = useMemo(
+    () =>
+      Number(
+        carrito
+          .filter((it): it is ItemUnidad => it.tipo === "unidad" && esAtajoSaldo(it.atajoPos ?? null))
+          .reduce((acc, it) => acc + calcularRecargoServicio(it.atajoPos ?? null, it.cantidad), 0)
+          .toFixed(2)
+      ),
+    [carrito]
+  )
+
   const aplicaRecargoTarjeta =
     medioPago === "debito" || medioPago === "credito" || medioPago === "transferencia"
 
-  const recargoNum = useMemo(() => {
+  const recargoCigarrillosNum = useMemo(() => {
     if (!aplicaRecargoTarjeta) return 0
     return Number((subtotalCigarrillos * RECARGO_CIGARRILLOS_PORC).toFixed(2))
   }, [subtotalCigarrillos, aplicaRecargoTarjeta])
+
+  const recargoNum = useMemo(
+    () => Number((recargoCigarrillosNum + recargoServiciosNum).toFixed(2)),
+    [recargoCigarrillosNum, recargoServiciosNum]
+  )
 
   const total = useMemo(() => subtotal + recargoNum, [subtotal, recargoNum])
 
@@ -638,6 +673,19 @@ export function PuntoDeVenta() {
     if (!productoImpresionSeleccionado || cantidad == null) return null
     return Number((toNumber(productoImpresionSeleccionado.precioVenta) * cantidad).toFixed(2))
   }, [cantidadImpresion, productoImpresionSeleccionado])
+
+  const recargoRecargaPreview = useMemo(() => {
+    if (!tipoRecarga) return null
+    const monto = parseEnteroPositivo(montoRecarga)
+    if (monto == null) return null
+    return calcularRecargoServicio(tipoRecarga, monto)
+  }, [tipoRecarga, montoRecarga])
+
+  const totalRecargaPreview = useMemo(() => {
+    const monto = parseEnteroPositivo(montoRecarga)
+    if (monto == null) return null
+    return Number((monto + (recargoRecargaPreview ?? 0)).toFixed(2))
+  }, [montoRecarga, recargoRecargaPreview])
 
   const referenciaVentaPeso = useMemo(() => {
     const precio = parseMoney(precioVentaPeso)
@@ -1095,37 +1143,21 @@ export function PuntoDeVenta() {
     }
 
     const precio = 1
-
-    setCarrito((prev) => {
-      const idx = prev.findIndex(
-        (x) => x.tipo === "unidad" && x.productoId === producto.id && x.atajoPos === (producto.atajoPos ?? null)
-      )
-
-      if (idx === -1) {
-        return [
-          ...prev,
-          {
-            lineaId: crearLineaId(),
-            tipo: "unidad",
-            productoId: producto.id,
-            nombre: producto.nombre,
-            precioUnitario: precio,
-            precioPersonalizado: false,
-            cantidad: monto,
-            stock: producto.stock,
-            esCigarrillo: false,
-            atajoPos: producto.atajoPos ?? null,
-          },
-        ]
-      }
-
-      const copy = [...prev]
-      const item = copy[idx]
-      if (item.tipo !== "unidad") return prev
-
-      copy[idx] = { ...item, cantidad: item.cantidad + monto }
-      return copy
-    })
+    setCarrito((prev) => [
+      ...prev,
+      {
+        lineaId: crearLineaId(),
+        tipo: "unidad",
+        productoId: producto.id,
+        nombre: producto.nombre,
+        precioUnitario: precio,
+        precioPersonalizado: false,
+        cantidad: monto,
+        stock: producto.stock,
+        esCigarrillo: false,
+        atajoPos: producto.atajoPos ?? null,
+      },
+    ])
 
     setDialogRecargaAbierto(false)
     resetDialogRecarga()
@@ -1599,7 +1631,7 @@ export function PuntoDeVenta() {
                 precioBase: it.precioBase,
               }
         ),
-        recargo: recargoNum,
+        recargo: recargoCigarrillosNum,
         medioPago,
       }
 
@@ -2117,8 +2149,12 @@ export function PuntoDeVenta() {
 
             <div className="rounded-md border p-3 text-sm">
               <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Recargo servicios (recargas)</span>
+                <span>{recargoServiciosNum > 0 ? formatPrecio(recargoServiciosNum) : "Sin recargo"}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between">
                 <span className="text-muted-foreground">Recargo cigarrillos (10% debito/credito/transferencia)</span>
-                <span>{aplicaRecargoTarjeta ? formatPrecio(recargoNum) : "Sin recargo"}</span>
+                <span>{aplicaRecargoTarjeta ? formatPrecio(recargoCigarrillosNum) : "Sin recargo"}</span>
               </div>
             </div>
 
@@ -2309,7 +2345,9 @@ export function PuntoDeVenta() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{tipoRecarga === "carga_virtual" ? "Carga virtual" : "Direct TV"}</DialogTitle>
-            <DialogDescription>Ingresa el monto a cargar. Se descuenta del saldo disponible.</DialogDescription>
+            <DialogDescription>
+              Ingresa el monto a cargar. Se descuenta del saldo disponible y se aplica recargo automatico.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-3">
@@ -2340,8 +2378,22 @@ export function PuntoDeVenta() {
                 <span>{stockDisponibleRecarga}</span>
               </div>
               <div className="mt-1 flex items-center justify-between">
-                <span className="text-muted-foreground">Precio unidad (fijo)</span>
-                <span>{formatPrecio(1)}</span>
+                <span className="text-muted-foreground">Regla de recargo</span>
+                <span>
+                  {tipoRecarga === "direct_tv"
+                    ? "10%"
+                    : `$${RECARGO_CARGA_VIRTUAL_BAJO} hasta $${CARGA_VIRTUAL_CORTE_RECARGO - 1}, luego $${
+                        RECARGO_CARGA_VIRTUAL_ALTO
+                      }`}
+                </span>
+              </div>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-muted-foreground">Recargo estimado</span>
+                <span>{recargoRecargaPreview == null ? "-" : formatPrecio(recargoRecargaPreview)}</span>
+              </div>
+              <div className="mt-3 flex items-center justify-between border-t pt-3">
+                <span className="font-semibold">Total a cobrar</span>
+                <span className="text-lg font-bold">{formatPrecio(totalRecargaPreview ?? 0)}</span>
               </div>
             </div>
           </div>
