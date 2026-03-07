@@ -40,8 +40,9 @@ import {
 
 type MedioPago = "efectivo" | "debito" | "credito" | "transferencia"
 type ModoPrecioPeso = "gramo" | "cien_gramos"
-type AtajoPos = "carga_virtual" | "direct_tv"
+type AtajoPos = "carga_virtual" | "direct_tv" | "imprimir_color" | "imprimir_normal"
 type TipoServicioRapido = "carga_virtual" | "direct_tv"
+type TipoImpresionRapida = "imprimir_color" | "imprimir_normal"
 
 type OfertaItem = {
   productoId: number
@@ -243,7 +244,7 @@ function calcularSubtotalItem(it: ItemCarrito) {
 
 function descripcionItem(it: ItemCarrito) {
   if (it.tipo === "unidad") {
-    if (it.atajoPos) {
+    if (esAtajoSaldo(it.atajoPos ?? null)) {
       return `Monto cargado: ${formatPrecio(it.cantidad)}`
     }
     return `${formatPrecio(it.precioUnitario)} c/u${it.precioPersonalizado ? " (promo)" : ""}`
@@ -301,10 +302,27 @@ function esProductoCigarrillo(p: Producto) {
   return CIGARRILLO_KEYWORDS.some((k) => texto.includes(k))
 }
 
-function esProductoRecargaValido(p: Producto | null | undefined) {
+function esAtajoSaldo(atajo: AtajoPos | null | undefined) {
+  return atajo === "carga_virtual" || atajo === "direct_tv"
+}
+
+function etiquetaAtajo(atajo: AtajoPos | null | undefined) {
+  if (!atajo) return null
+  if (atajo === "carga_virtual") return "Carga virtual"
+  if (atajo === "direct_tv") return "Direct TV"
+  if (atajo === "imprimir_color") return "Imprimir color"
+  return "Imprimir normal"
+}
+
+function esProductoSaldoValido(p: Producto | null | undefined) {
   if (!p) return false
   if (p.esPesable) return false
   return toNumber(p.precioVenta) === 1
+}
+
+function esProductoImpresionValido(p: Producto | null | undefined) {
+  if (!p) return false
+  return !p.esPesable
 }
 
 const MEDIOS: Array<{
@@ -344,6 +362,9 @@ export function PuntoDeVenta() {
   const [dialogRecargaAbierto, setDialogRecargaAbierto] = useState(false)
   const [tipoRecarga, setTipoRecarga] = useState<TipoServicioRapido | null>(null)
   const [montoRecarga, setMontoRecarga] = useState("")
+  const [dialogImpresionAbierto, setDialogImpresionAbierto] = useState(false)
+  const [tipoImpresion, setTipoImpresion] = useState<TipoImpresionRapida>("imprimir_normal")
+  const [cantidadImpresion, setCantidadImpresion] = useState("1")
 
   const [dialogOfertasAbierto, setDialogOfertasAbierto] = useState(false)
   const [ofertaNombre, setOfertaNombre] = useState("")
@@ -387,6 +408,14 @@ export function PuntoDeVenta() {
   )
   const { data: productoDirectTv, mutate: mutateDirectTv } = useSWR<Producto | null>(
     "/api/productos/atajo/direct_tv",
+    productoAtajoFetcher
+  )
+  const { data: productoImpresionColor, mutate: mutateImpresionColor } = useSWR<Producto | null>(
+    "/api/productos/atajo/imprimir_color",
+    productoAtajoFetcher
+  )
+  const { data: productoImpresionNormal, mutate: mutateImpresionNormal } = useSWR<Producto | null>(
+    "/api/productos/atajo/imprimir_normal",
     productoAtajoFetcher
   )
   const { data: cajaAbierta, mutate: mutateCaja, isLoading: cargandoCaja } = useSWR<CajaAbierta | null>(
@@ -447,6 +476,13 @@ export function PuntoDeVenta() {
     return productoDirectTv ?? productos.find((p) => p.atajoPos === "direct_tv") ?? null
   }, [tipoRecarga, productoCargaVirtual, productoDirectTv, productos])
 
+  const productoImpresionSeleccionado = useMemo(() => {
+    if (tipoImpresion === "imprimir_color") {
+      return productoImpresionColor ?? productos.find((p) => p.atajoPos === "imprimir_color") ?? null
+    }
+    return productoImpresionNormal ?? productos.find((p) => p.atajoPos === "imprimir_normal") ?? null
+  }, [tipoImpresion, productoImpresionColor, productoImpresionNormal, productos])
+
   const saldoCargaVirtual = useMemo(
     () => (productoCargaVirtual ?? productos.find((p) => p.atajoPos === "carga_virtual"))?.stock ?? 0,
     [productoCargaVirtual, productos]
@@ -455,6 +491,16 @@ export function PuntoDeVenta() {
   const saldoDirectTv = useMemo(
     () => (productoDirectTv ?? productos.find((p) => p.atajoPos === "direct_tv"))?.stock ?? 0,
     [productoDirectTv, productos]
+  )
+
+  const stockImpresionColor = useMemo(
+    () => (productoImpresionColor ?? productos.find((p) => p.atajoPos === "imprimir_color"))?.stock ?? 0,
+    [productoImpresionColor, productos]
+  )
+
+  const stockImpresionNormal = useMemo(
+    () => (productoImpresionNormal ?? productos.find((p) => p.atajoPos === "imprimir_normal"))?.stock ?? 0,
+    [productoImpresionNormal, productos]
   )
 
   const stockDisponiblePeso = useMemo(() => {
@@ -476,6 +522,16 @@ export function PuntoDeVenta() {
 
     return Math.max(productoRecargaSeleccionado.stock - reservado, 0)
   }, [carrito, productoRecargaSeleccionado])
+
+  const stockDisponibleImpresion = useMemo(() => {
+    if (!productoImpresionSeleccionado) return 0
+
+    const reservado = carrito
+      .filter((it) => it.productoId === productoImpresionSeleccionado.id)
+      .reduce((acc, it) => acc + consumoStockItem(it), 0)
+
+    return Math.max(productoImpresionSeleccionado.stock - reservado, 0)
+  }, [carrito, productoImpresionSeleccionado])
 
   useEffect(() => {
     if (!cajaAbiertaId || cargando || dialogNuevoAbierto) return
@@ -518,6 +574,16 @@ export function PuntoDeVenta() {
   }, [dialogRecargaAbierto])
 
   useEffect(() => {
+    if (!dialogImpresionAbierto) return
+    const frame = window.requestAnimationFrame(() => {
+      const input = document.getElementById("cantidad-impresion") as HTMLInputElement | null
+      input?.focus()
+      input?.select()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [dialogImpresionAbierto])
+
+  useEffect(() => {
     if (!dialogOfertasAbierto) return
     const frame = window.requestAnimationFrame(() => {
       const input = document.getElementById("oferta-nombre") as HTMLInputElement | null
@@ -534,7 +600,7 @@ export function PuntoDeVenta() {
   const totalItems = useMemo(
     () =>
       carrito.reduce((acc, it) => {
-        if (it.tipo === "unidad") return acc + (it.atajoPos ? 1 : it.cantidad)
+        if (it.tipo === "unidad") return acc + (esAtajoSaldo(it.atajoPos ?? null) ? 1 : it.cantidad)
         return acc + 1
       }, 0),
     [carrito]
@@ -566,6 +632,12 @@ export function PuntoDeVenta() {
     const totalCalculado = modoPrecioPeso === "gramo" ? precio * gramos : precio * (gramos / 100)
     return Number(totalCalculado.toFixed(2))
   }, [precioVentaPeso, gramosVentaPeso, modoPrecioPeso])
+
+  const totalImpresion = useMemo(() => {
+    const cantidad = parseEnteroPositivo(cantidadImpresion)
+    if (!productoImpresionSeleccionado || cantidad == null) return null
+    return Number((toNumber(productoImpresionSeleccionado.precioVenta) * cantidad).toFixed(2))
+  }, [cantidadImpresion, productoImpresionSeleccionado])
 
   const referenciaVentaPeso = useMemo(() => {
     const precio = parseMoney(precioVentaPeso)
@@ -624,6 +696,11 @@ export function PuntoDeVenta() {
   function resetDialogRecarga() {
     setTipoRecarga(null)
     setMontoRecarga("")
+  }
+
+  function resetDialogImpresion() {
+    setTipoImpresion("imprimir_normal")
+    setCantidadImpresion("1")
   }
 
   function resetDialogOfertasDraft() {
@@ -958,6 +1035,13 @@ export function PuntoDeVenta() {
     return productoDirectTv ?? productos.find((p) => p.atajoPos === "direct_tv") ?? null
   }
 
+  function getProductoImpresion(tipo: TipoImpresionRapida) {
+    if (tipo === "imprimir_color") {
+      return productoImpresionColor ?? productos.find((p) => p.atajoPos === "imprimir_color") ?? null
+    }
+    return productoImpresionNormal ?? productos.find((p) => p.atajoPos === "imprimir_normal") ?? null
+  }
+
   function abrirDialogRecarga(tipo: TipoServicioRapido) {
     if (!cajaAbierta) {
       toast.error("No hay caja abierta")
@@ -970,7 +1054,7 @@ export function PuntoDeVenta() {
       return
     }
 
-    if (!esProductoRecargaValido(producto)) {
+    if (!esProductoSaldoValido(producto)) {
       toast.error(`Configura ${producto.nombre} como no pesable y precio venta = 1.`)
       return
     }
@@ -994,7 +1078,7 @@ export function PuntoDeVenta() {
       return
     }
 
-    if (!esProductoRecargaValido(producto)) {
+    if (!esProductoSaldoValido(producto)) {
       toast.error(`Configura ${producto.nombre} como no pesable y precio venta = 1.`)
       return
     }
@@ -1048,6 +1132,96 @@ export function PuntoDeVenta() {
     toast.success("Recarga agregada al carrito")
   }
 
+  function abrirDialogImpresion(tipoInicial: TipoImpresionRapida = "imprimir_normal") {
+    if (!cajaAbierta) {
+      toast.error("No hay caja abierta")
+      return
+    }
+
+    const productoColor = getProductoImpresion("imprimir_color")
+    const productoNormal = getProductoImpresion("imprimir_normal")
+    if (!productoColor && !productoNormal) {
+      toast.error('No hay productos configurados para "imprimir_color" o "imprimir_normal"')
+      return
+    }
+
+    const tipoApertura =
+      tipoInicial === "imprimir_color"
+        ? productoColor
+          ? "imprimir_color"
+          : "imprimir_normal"
+        : productoNormal
+          ? "imprimir_normal"
+          : "imprimir_color"
+
+    setTipoImpresion(tipoApertura)
+    setCantidadImpresion("1")
+    setDialogImpresionAbierto(true)
+  }
+
+  function confirmarImpresionServicio() {
+    const producto = getProductoImpresion(tipoImpresion)
+    if (!producto) {
+      toast.error("Producto de impresion no configurado")
+      return
+    }
+    if (!esProductoImpresionValido(producto)) {
+      toast.error(`Configura ${producto.nombre} como producto no pesable.`)
+      return
+    }
+
+    const cantidad = parseEnteroPositivo(cantidadImpresion)
+    if (cantidad == null) {
+      toast.error("Ingresa una cantidad entera mayor a 0")
+      return
+    }
+
+    if (cantidad > stockDisponibleImpresion) {
+      toast.error(`Stock insuficiente (${stockDisponibleImpresion} disponibles)`)
+      return
+    }
+
+    const precio = toNumber(producto.precioVenta)
+    if (precio < 0) {
+      toast.error("El precio del producto de impresion no puede ser negativo")
+      return
+    }
+
+    setCarrito((prev) => {
+      const idx = prev.findIndex(
+        (x) => x.tipo === "unidad" && x.productoId === producto.id && x.atajoPos === (producto.atajoPos ?? null)
+      )
+
+      if (idx === -1) {
+        return [
+          ...prev,
+          {
+            lineaId: crearLineaId(),
+            tipo: "unidad",
+            productoId: producto.id,
+            nombre: producto.nombre,
+            precioUnitario: precio,
+            precioPersonalizado: false,
+            cantidad,
+            stock: producto.stock,
+            esCigarrillo: false,
+            atajoPos: producto.atajoPos ?? null,
+          },
+        ]
+      }
+
+      const copy = [...prev]
+      const item = copy[idx]
+      if (item.tipo !== "unidad") return prev
+      copy[idx] = { ...item, cantidad: item.cantidad + cantidad }
+      return copy
+    })
+
+    setDialogImpresionAbierto(false)
+    resetDialogImpresion()
+    toast.success("Impresion agregada al carrito")
+  }
+
   function agregarAlCarrito(p: Producto) {
     if (p.stock <= 0) {
       toast.error("Sin stock")
@@ -1061,6 +1235,16 @@ export function PuntoDeVenta() {
 
     if (p.atajoPos === "direct_tv") {
       abrirDialogRecarga("direct_tv")
+      return
+    }
+
+    if (p.atajoPos === "imprimir_color") {
+      abrirDialogImpresion("imprimir_color")
+      return
+    }
+
+    if (p.atajoPos === "imprimir_normal") {
+      abrirDialogImpresion("imprimir_normal")
       return
     }
 
@@ -1291,7 +1475,13 @@ export function PuntoDeVenta() {
         })
         .then((r) => r.data as Producto)
 
-      await Promise.all([mutateProductos(), mutateCargaVirtual(), mutateDirectTv()])
+      await Promise.all([
+        mutateProductos(),
+        mutateCargaVirtual(),
+        mutateDirectTv(),
+        mutateImpresionColor(),
+        mutateImpresionNormal(),
+      ])
       agregarAlCarrito(creado)
       setDialogNuevoAbierto(false)
       setEntrada("")
@@ -1434,7 +1624,14 @@ export function PuntoDeVenta() {
       setMedioPago("efectivo")
       setCobroAbierto(false)
 
-      await Promise.all([mutateProductos(), mutateCaja(), mutateCargaVirtual(), mutateDirectTv()])
+      await Promise.all([
+        mutateProductos(),
+        mutateCaja(),
+        mutateCargaVirtual(),
+        mutateDirectTv(),
+        mutateImpresionColor(),
+        mutateImpresionNormal(),
+      ])
     } catch (err: unknown) {
       toast.error(getErrorMessage(err, "Error al confirmar venta"))
     } finally {
@@ -1465,7 +1662,14 @@ export function PuntoDeVenta() {
       setDialogAnularAbierto(false)
       setMotivoAnulacion("")
       setUltimaVenta(null)
-      await Promise.all([mutateProductos(), mutateCaja(), mutateCargaVirtual(), mutateDirectTv()])
+      await Promise.all([
+        mutateProductos(),
+        mutateCaja(),
+        mutateCargaVirtual(),
+        mutateDirectTv(),
+        mutateImpresionColor(),
+        mutateImpresionNormal(),
+      ])
     } catch (err: unknown) {
       toast.error(getErrorMessage(err, "No se pudo anular la venta"))
     } finally {
@@ -1644,6 +1848,17 @@ export function PuntoDeVenta() {
                 <Button
                   type="button"
                   variant="outline"
+                  onClick={() => abrirDialogImpresion()}
+                  disabled={!cajaAbierta}
+                  className="w-full sm:w-auto"
+                >
+                  <Printer className="mr-2 h-4 w-4" />
+                  Imprimir (color: {stockImpresionColor} / normal: {stockImpresionNormal})
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={() => setDialogOfertasAbierto(true)}
                   className="w-full sm:w-auto"
                 >
@@ -1656,6 +1871,8 @@ export function PuntoDeVenta() {
                 Usa la pistola lectora o escribi el nombre/codigo manualmente.
                 {productoCargaVirtual === null && ' Falta crear/configurar el atajo "carga_virtual".'}
                 {productoDirectTv === null && ' Falta crear/configurar el atajo "direct_tv".'}
+                {productoImpresionColor === null && ' Falta crear/configurar el atajo "imprimir_color".'}
+                {productoImpresionNormal === null && ' Falta crear/configurar el atajo "imprimir_normal".'}
               </p>
             </CardContent>
           </Card>
@@ -1666,28 +1883,34 @@ export function PuntoDeVenta() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                {productosRapidos.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => agregarAlCarrito(p)}
-                    disabled={p.stock <= 0 || !cajaAbierta}
-                    className="rounded-lg border p-3 text-left transition hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <div className="truncate text-sm font-medium">
-                      {p.nombre}
-                      {p.esPesable && <span className="ml-2 text-xs text-muted-foreground">(granel)</span>}
-                      {!p.esPesable && p.atajoPos && <span className="ml-2 text-xs text-muted-foreground">(recarga)</span>}
-                    </div>
-                    <div className="mt-1 flex items-center justify-between">
-                      <span className="text-sm font-semibold text-primary">
-                        {p.atajoPos ? "Venta por saldo" : formatPrecio(toNumber(p.precioVenta))}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {p.esPesable ? `${p.stock}g` : p.atajoPos ? `saldo ${p.stock}` : `x${p.stock}`}
-                      </span>
-                    </div>
-                  </button>
-                ))}
+                {productosRapidos.map((p) => {
+                  const esSaldoAtajo = esAtajoSaldo(p.atajoPos ?? null)
+                  const atajoLabel = etiquetaAtajo(p.atajoPos ?? null)
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => agregarAlCarrito(p)}
+                      disabled={p.stock <= 0 || !cajaAbierta}
+                      className="rounded-lg border p-3 text-left transition hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <div className="truncate text-sm font-medium">
+                        {p.nombre}
+                        {p.esPesable && <span className="ml-2 text-xs text-muted-foreground">(granel)</span>}
+                        {!p.esPesable && atajoLabel && (
+                          <span className="ml-2 text-xs text-muted-foreground">({atajoLabel.toLowerCase()})</span>
+                        )}
+                      </div>
+                      <div className="mt-1 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-primary">
+                          {esSaldoAtajo ? "Venta por saldo" : formatPrecio(toNumber(p.precioVenta))}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {p.esPesable ? `${p.stock}g` : esSaldoAtajo ? `saldo ${p.stock}` : `x${p.stock}`}
+                        </span>
+                      </div>
+                    </button>
+                  )
+                })}
               </div>
 
               {productosRapidos.length === 0 && (
@@ -1721,7 +1944,7 @@ export function PuntoDeVenta() {
                       </div>
                       <div className="mt-2 flex items-center justify-between">
                         {it.tipo === "unidad" ? (
-                          it.atajoPos ? (
+                          esAtajoSaldo(it.atajoPos ?? null) ? (
                             <span className="text-sm text-muted-foreground">Saldo consumido: {it.cantidad}</span>
                           ) : (
                             <div className="flex items-center gap-1">
@@ -2128,6 +2351,91 @@ export function PuntoDeVenta() {
               Cancelar
             </Button>
             <Button onClick={confirmarRecargaServicio} disabled={!productoRecargaSeleccionado || !cajaAbierta}>
+              Agregar al carrito
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={dialogImpresionAbierto}
+        onOpenChange={(open) => {
+          setDialogImpresionAbierto(open)
+          if (!open) resetDialogImpresion()
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Imprimir</DialogTitle>
+            <DialogDescription>Selecciona tipo de impresion y cantidad. Se descuenta del stock.</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={tipoImpresion === "imprimir_color" ? "default" : "outline"}
+                onClick={() => setTipoImpresion("imprimir_color")}
+                disabled={!getProductoImpresion("imprimir_color")}
+              >
+                A color
+              </Button>
+              <Button
+                type="button"
+                variant={tipoImpresion === "imprimir_normal" ? "default" : "outline"}
+                onClick={() => setTipoImpresion("imprimir_normal")}
+                disabled={!getProductoImpresion("imprimir_normal")}
+              >
+                Sin color
+              </Button>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="cantidad-impresion">Cantidad *</Label>
+              <Input
+                id="cantidad-impresion"
+                value={cantidadImpresion}
+                onChange={(e) => setCantidadImpresion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    confirmarImpresionServicio()
+                  }
+                }}
+                inputMode="numeric"
+                placeholder="Ej: 5"
+              />
+            </div>
+
+            <div className="rounded-md border p-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Producto</span>
+                <span className="font-medium">{productoImpresionSeleccionado?.nombre ?? "-"}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-muted-foreground">Tipo</span>
+                <span>{tipoImpresion === "imprimir_color" ? "A color" : "Sin color"}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-muted-foreground">Stock disponible</span>
+                <span>{stockDisponibleImpresion}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-muted-foreground">Precio unidad</span>
+                <span>{productoImpresionSeleccionado ? formatPrecio(toNumber(productoImpresionSeleccionado.precioVenta)) : "-"}</span>
+              </div>
+              <div className="mt-3 flex items-center justify-between border-t pt-3">
+                <span className="font-semibold">Subtotal</span>
+                <span className="text-xl font-bold">{formatPrecio(totalImpresion ?? 0)}</span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogImpresionAbierto(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={confirmarImpresionServicio} disabled={!productoImpresionSeleccionado || !cajaAbierta}>
               Agregar al carrito
             </Button>
           </DialogFooter>

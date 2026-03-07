@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 type ModoPrecioPeso = "gramo" | "cien_gramos"
-type AtajoPos = "carga_virtual" | "direct_tv"
+type AtajoPos = "carga_virtual" | "direct_tv" | "imprimir_color" | "imprimir_normal"
 
 type ProductoBackend = {
   id: number
@@ -154,6 +154,18 @@ function getApiErrorMessage(err: unknown, fallback: string) {
   return apiErr.response?.data?.error || apiErr.response?.data?.message || apiErr.message || fallback
 }
 
+function esAtajoSaldo(atajo: AtajoPos | null | undefined) {
+  return atajo === "carga_virtual" || atajo === "direct_tv"
+}
+
+function etiquetaAtajo(atajo: AtajoPos | null | undefined) {
+  if (!atajo) return null
+  if (atajo === "carga_virtual") return "carga virtual"
+  if (atajo === "direct_tv") return "direct tv"
+  if (atajo === "imprimir_color") return "imprimir color"
+  return "imprimir normal"
+}
+
 export default function ProductosTabla() {
   const [busqueda, setBusqueda] = useState("")
   const [page, setPage] = useState(0)
@@ -187,20 +199,26 @@ export default function ProductosTabla() {
   const [formModoPrecioDefault, setFormModoPrecioDefault] = useState<ModoPrecioPeso>("cien_gramos")
   const [formAtajoPos, setFormAtajoPos] = useState<AtajoPos | "">("")
 
-  const esProductoRecarga = formAtajoPos === "carga_virtual" || formAtajoPos === "direct_tv"
+  const esProductoSaldo = esAtajoSaldo(formAtajoPos || null)
+  const tieneAtajoPos = Boolean(formAtajoPos)
 
   useEffect(() => {
     setPage(0)
   }, [busqueda])
 
   useEffect(() => {
-    if (!esProductoRecarga) return
+    if (!esProductoSaldo) return
     setFormEsPesable(false)
     setFormModoPrecioDefault("cien_gramos")
     setFormPrecioCosto("0")
     setFormPrecio("1")
     setFormVencimiento("")
-  }, [esProductoRecarga])
+  }, [esProductoSaldo])
+
+  useEffect(() => {
+    if (!tieneAtajoPos) return
+    setFormEsPesable(false)
+  }, [tieneAtajoPos])
 
   const productosUrl = useMemo(() => {
     const params = new URLSearchParams()
@@ -233,6 +251,7 @@ export default function ProductosTabla() {
     () => [...lotes].filter((l) => (l.cantidad ?? 0) > 0).sort(compareLoteFefo),
     [lotes]
   )
+  const productoStockEsSaldo = esAtajoSaldo(productoStock?.atajoPos ?? null)
 
   function resetFormulario() {
     setFormNombre("")
@@ -291,10 +310,10 @@ export default function ProductosTabla() {
     const stock = parseInteger(formStock) ?? 0
     const stockMinimo = parseInteger(formStockMinimo) ?? 5
 
-    const precioVenta = esProductoRecarga ? 1 : parseNumber(formPrecio)
-    const precioCosto = esProductoRecarga ? 0 : parseNumber(formPrecioCosto) ?? 0
-    const fechaVencimiento = esProductoRecarga ? null : formVencimiento.trim() ? formVencimiento : null
-    const esPesableFinal = esProductoRecarga ? false : formEsPesable
+    const precioVenta = esProductoSaldo ? 1 : parseNumber(formPrecio)
+    const precioCosto = esProductoSaldo ? 0 : parseNumber(formPrecioCosto) ?? 0
+    const fechaVencimiento = esProductoSaldo ? null : formVencimiento.trim() ? formVencimiento : null
+    const esPesableFinal = tieneAtajoPos ? false : formEsPesable
 
     if (!nombre) {
       toast.error("Completa el nombre del producto")
@@ -312,7 +331,7 @@ export default function ProductosTabla() {
     }
 
     if (stock < 0 || stockMinimo < 0) {
-      toast.error(esProductoRecarga ? "Saldo y saldo minimo deben ser >= 0" : "Stock y stock minimo deben ser >= 0")
+      toast.error(esProductoSaldo ? "Saldo y saldo minimo deben ser >= 0" : "Stock y stock minimo deben ser >= 0")
       return
     }
 
@@ -418,7 +437,7 @@ export default function ProductosTabla() {
       await api.patch(`/api/productos/${productoStock.id}`, payload)
 
       toast.success(
-        productoStock.atajoPos
+        productoStockEsSaldo
           ? `Saldo actualizado: +${cant}`
           : `Stock actualizado: +${cant} ${productoStock.esPesable ? "g" : "unidades"}`
       )
@@ -508,15 +527,17 @@ export default function ProductosTabla() {
                 <option value="">Sin atajo</option>
                 <option value="carga_virtual">Carga virtual</option>
                 <option value="direct_tv">Direct TV</option>
+                <option value="imprimir_color">Imprimir color</option>
+                <option value="imprimir_normal">Imprimir normal</option>
               </select>
-              {esProductoRecarga && (
+              {esProductoSaldo && (
                 <p className="text-xs text-muted-foreground">
-                  Modo recarga activo: se ocultan precios y se usa saldo (precio venta fijo = 1).
+                  Modo saldo activo: se ocultan precios y se usa saldo (precio venta fijo = 1).
                 </p>
               )}
             </div>
 
-            {!esProductoRecarga && (
+            {!tieneAtajoPos && (
               <div className="grid gap-3 rounded-lg border p-3">
                 <div className="flex items-center gap-2">
                   <input
@@ -561,7 +582,7 @@ export default function ProductosTabla() {
               </div>
             )}
 
-            {!esProductoRecarga && (
+            {!esProductoSaldo && (
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="precioCosto">Precio de costo</Label>
@@ -598,7 +619,7 @@ export default function ProductosTabla() {
               </div>
             )}
 
-            {!esProductoRecarga && formPrecioCosto && formPrecio && Number(formPrecioCosto) > 0 && (
+            {!esProductoSaldo && formPrecioCosto && formPrecio && Number(formPrecioCosto) > 0 && (
               <div className="rounded-lg border px-3 py-2 text-sm text-foreground">
                 Ganancia: {formatPrecio(Number(formPrecio) - Number(formPrecioCosto))} por{" "}
                 {formEsPesable ? (formModoPrecioDefault === "gramo" ? "gramo" : "100g") : "unidad"} (
@@ -616,7 +637,7 @@ export default function ProductosTabla() {
                   placeholder="Ej: Bebidas"
                 />
               </div>
-              {!esProductoRecarga && (
+              {!esProductoSaldo && (
                 <div className="grid gap-2">
                   <Label htmlFor="vencimiento">Fecha de vencimiento</Label>
                   <Input
@@ -632,7 +653,7 @@ export default function ProductosTabla() {
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="stock">
-                  {esProductoRecarga
+                  {esProductoSaldo
                     ? "Ingresar saldo *"
                     : productoEditando
                       ? formEsPesable
@@ -652,7 +673,7 @@ export default function ProductosTabla() {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="stockMinimo">
-                  {esProductoRecarga
+                  {esProductoSaldo
                     ? "Stock minimo (alerta)"
                     : formEsPesable
                       ? "Stock minimo (gramos)"
@@ -744,7 +765,8 @@ export default function ProductosTabla() {
                 {!isLoading &&
                   productos.map((p) => {
                     const margen = p.precioCosto > 0 ? calcularMargen(p.precioCosto, p.precioVenta) : null
-                    const esRecarga = p.atajoPos === "carga_virtual" || p.atajoPos === "direct_tv"
+                    const esAtajoSaldoProducto = esAtajoSaldo(p.atajoPos)
+                    const atajoLabel = etiquetaAtajo(p.atajoPos)
 
                     return (
                       <TableRow key={p.id}>
@@ -753,9 +775,9 @@ export default function ProductosTabla() {
                             <p className="font-medium">
                               {p.nombre}
                               {p.esPesable && <span className="ml-2 text-xs text-muted-foreground">(granel)</span>}
-                              {esRecarga && (
+                              {atajoLabel && (
                                 <span className="ml-2 text-xs text-muted-foreground">
-                                  ({p.atajoPos === "carga_virtual" ? "carga virtual" : "direct tv"})
+                                  ({atajoLabel})
                                 </span>
                               )}
                             </p>
@@ -776,15 +798,15 @@ export default function ProductosTabla() {
                         </TableCell>
 
                         <TableCell className="hidden xl:table-cell text-right text-sm text-muted-foreground">
-                          {esRecarga ? "-" : p.precioCosto > 0 ? formatPrecio(p.precioCosto) : "-"}
+                          {esAtajoSaldoProducto ? "-" : p.precioCosto > 0 ? formatPrecio(p.precioCosto) : "-"}
                         </TableCell>
 
                         <TableCell className="text-right font-medium">
-                          {esRecarga ? "Saldo" : formatPrecio(p.precioVenta)}
+                          {esAtajoSaldoProducto ? "Saldo" : formatPrecio(p.precioVenta)}
                         </TableCell>
 
                         <TableCell className="hidden md:table-cell text-right">
-                          {esRecarga ? (
+                          {esAtajoSaldoProducto ? (
                             <span className="text-xs text-muted-foreground">-</span>
                           ) : margen !== null ? (
                             <Badge variant="secondary">{margen}%</Badge>
@@ -816,7 +838,7 @@ export default function ProductosTabla() {
                               size="icon"
                               className="h-8 w-8"
                               onClick={() => abrirIngresoStock(p)}
-                              title={esRecarga ? "Ingresar saldo" : "Ingresar stock"}
+                              title={esAtajoSaldoProducto ? "Ingresar saldo" : "Ingresar stock"}
                             >
                               <PackagePlus className="h-4 w-4" />
                             </Button>
@@ -902,11 +924,11 @@ export default function ProductosTabla() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <PackagePlus className="h-5 w-5 text-primary" />
-              {productoStock?.atajoPos ? "Ingresar saldo" : "Ingresar stock"}
+              {productoStockEsSaldo ? "Ingresar saldo" : "Ingresar stock"}
             </DialogTitle>
             <DialogDescription>
               {productoStock
-                ? `${productoStock.atajoPos ? "Agregar saldo" : `Agregar ${productoStock.esPesable ? "gramos" : "unidades"}`} a: ${
+                ? `${productoStockEsSaldo ? "Agregar saldo" : `Agregar ${productoStock.esPesable ? "gramos" : "unidades"}`} a: ${
                     productoStock.nombre
                   } (actual: ${productoStock.esPesable ? `${productoStock.stock}g` : productoStock.stock})`
                 : "Selecciona un producto"}
@@ -916,7 +938,7 @@ export default function ProductosTabla() {
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="cantidadStock">
-                {productoStock?.atajoPos
+                {productoStockEsSaldo
                   ? "Saldo a ingresar *"
                   : productoStock?.esPesable
                     ? "Gramos a ingresar *"
@@ -927,12 +949,12 @@ export default function ProductosTabla() {
                 type="number"
                 value={cantidadStock}
                 onChange={(e) => setCantidadStock(e.target.value)}
-                placeholder={productoStock?.atajoPos ? "Ej: 100000" : productoStock?.esPesable ? "Ej: 500" : "Ej: 20"}
+                placeholder={productoStockEsSaldo ? "Ej: 100000" : productoStock?.esPesable ? "Ej: 500" : "Ej: 20"}
                 min="1"
               />
             </div>
 
-            {!productoStock?.atajoPos && (
+            {!productoStockEsSaldo && (
               <>
                 <div className="grid gap-2">
                   <Label htmlFor="costoStock">Precio de costo (opcional)</Label>
