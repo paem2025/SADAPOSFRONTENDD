@@ -443,6 +443,11 @@ export function ComprasPanel() {
           </CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="mb-3 rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
+            El historial de compras es inmutable para conservar trazabilidad de stock y costos. No se puede eliminar;
+            para corregir errores, registra un ajuste compensatorio.
+          </div>
+
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
