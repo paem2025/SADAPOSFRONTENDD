@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { Store, Loader2, Eye, EyeOff } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -12,7 +12,6 @@ import { useAuth } from "@/lib/auth-context"
 
 export default function LoginPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const { login } = useAuth()
   const [usuario, setUsuario] = useState("")
   const [password, setPassword] = useState("")
@@ -21,10 +20,14 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
 
   useEffect(() => {
-    if (searchParams.get("logout") !== "1") return
+    if (typeof window === "undefined") return
+
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("logout") !== "1") return
+
     toast.success("Sesion cerrada")
-    router.replace("/login")
-  }, [searchParams, router])
+    window.history.replaceState({}, "", "/login")
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
