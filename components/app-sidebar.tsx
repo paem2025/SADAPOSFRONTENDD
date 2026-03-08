@@ -55,7 +55,7 @@ export function AppSidebar() {
     }
 
     if (typeof window !== "undefined") {
-      window.location.replace("/login")
+      window.location.replace("/login?logout=1")
     }
   }
 
