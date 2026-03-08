@@ -120,13 +120,69 @@ function formatDetalleHumano(log: AuditLog | null, detalle: Record<string, unkno
   return lines.join("\n")
 }
 
-function formatDetalleTecnico(detalleJson: string | null | undefined) {
-  if (!detalleJson) return "-"
-  try {
-    return JSON.stringify(JSON.parse(detalleJson), null, 2)
-  } catch {
-    return detalleJson
+function labelFromPath(path: string) {
+  const labels: Record<string, string> = {
+    id: "ID objetivo",
+    nombre: "Nombre objetivo",
+    usuario: "Usuario objetivo",
+    rol: "Rol objetivo",
+    activo: "Activo (antes)",
+    requestByUsuarioId: "ID ejecutado por",
+    requestByUsuarioNombre: "Ejecutado por",
+    tipoEliminacion: "Tipo de eliminacion",
+    motivo: "Motivo",
+    "despues.id": "ID despues",
+    "despues.nombre": "Nombre despues",
+    "despues.usuario": "Usuario despues",
+    "despues.rol": "Rol despues",
+    "despues.activo": "Activo (despues)",
   }
+  return labels[path] ?? path
+}
+
+function valueToText(path: string, value: unknown): string {
+  if (value === null || value === undefined) return "-"
+  if (typeof value === "boolean") return value ? "Si" : "No"
+  if (typeof value === "number") return String(value)
+  if (typeof value === "string") {
+    if (path === "tipoEliminacion") {
+      if (value === "hard") return "Eliminacion fisica"
+      if (value === "soft") return "Baja logica (desactivado)"
+    }
+    if (path === "motivo" && value === "referencias") {
+      return "Tiene movimientos o referencias historicas"
+    }
+    return value
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "-"
+    const allPrimitive = value.every((v) => v === null || ["string", "number", "boolean"].includes(typeof v))
+    if (allPrimitive) {
+      return value.map((v) => valueToText(path, v)).join(", ")
+    }
+    return `${value.length} item(s)`
+  }
+  return "[objeto]"
+}
+
+function formatDetalleExtendido(detalle: Record<string, unknown> | null) {
+  if (!detalle) return "-"
+
+  const lines: string[] = []
+
+  const visit = (obj: Record<string, unknown>, prefix = "") => {
+    for (const [key, rawValue] of Object.entries(obj)) {
+      const path = prefix ? `${prefix}.${key}` : key
+      if (rawValue && typeof rawValue === "object" && !Array.isArray(rawValue)) {
+        visit(rawValue as Record<string, unknown>, path)
+        continue
+      }
+      lines.push(`${labelFromPath(path)}: ${valueToText(path, rawValue)}`)
+    }
+  }
+
+  visit(detalle)
+  return lines.length > 0 ? lines.join("\n") : "-"
 }
 
 export function AuditoriaPanel() {
@@ -190,10 +246,7 @@ export function AuditoriaPanel() {
     () => formatDetalleHumano(logSeleccionado, detalleParseado),
     [logSeleccionado, detalleParseado],
   )
-  const detalleTecnico = useMemo(
-    () => formatDetalleTecnico(logSeleccionado?.detalleJson),
-    [logSeleccionado?.detalleJson],
-  )
+  const detalleExtendido = useMemo(() => formatDetalleExtendido(detalleParseado), [detalleParseado])
 
   function limpiarFiltros() {
     setFiltroAccion("")
@@ -460,8 +513,8 @@ export function AuditoriaPanel() {
             )}
 
             <div className="max-h-[320px] overflow-auto rounded-md border bg-muted/30 p-3">
-              <p className="mb-2 text-sm font-medium">Detalle tecnico (JSON)</p>
-              <pre className="text-xs leading-5 whitespace-pre-wrap break-all">{detalleTecnico}</pre>
+              <p className="mb-2 text-sm font-medium">Detalle extendido</p>
+              <pre className="text-xs leading-5 whitespace-pre-wrap break-words">{detalleExtendido}</pre>
             </div>
           </div>
 
