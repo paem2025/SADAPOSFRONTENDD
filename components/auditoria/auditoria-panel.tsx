@@ -62,7 +62,65 @@ function getErrorMessage(err: unknown, fallback: string) {
   return apiErr.response?.data?.message || apiErr.response?.data?.error || apiErr.message || fallback
 }
 
-function formatDetalle(detalleJson: string | null | undefined) {
+function formatAccion(accion: string) {
+  if (accion === "USUARIO_DELETE_SOFT") return "Usuario desactivado"
+  if (accion === "USUARIO_DELETE_HARD") return "Usuario eliminado"
+  return accion
+}
+
+function parseDetalle(detalleJson: string | null | undefined): Record<string, unknown> | null {
+  if (!detalleJson) return null
+  try {
+    const parsed = JSON.parse(detalleJson)
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function asText(value: unknown) {
+  if (value === null || value === undefined) return null
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value)
+  return null
+}
+
+function formatDetalleHumano(log: AuditLog | null, detalle: Record<string, unknown> | null) {
+  if (!log || !detalle) return null
+  if (log.accion !== "USUARIO_DELETE_SOFT" && log.accion !== "USUARIO_DELETE_HARD") return null
+
+  const objetivoId = asText(detalle.id) ?? log.entidadId ?? "-"
+  const objetivoNombre = asText(detalle.nombre) ?? "-"
+  const objetivoUsuario = asText(detalle.usuario) ?? "-"
+  const objetivoRol = asText(detalle.rol) ?? "-"
+
+  const ejecutadoPorNombre = asText(detalle.requestByUsuarioNombre) ?? log.usuarioNombre ?? "Sistema"
+  const ejecutadoPorId = asText(detalle.requestByUsuarioId) ?? (log.usuarioId != null ? String(log.usuarioId) : null)
+
+  const tipoEliminacion =
+    asText(detalle.tipoEliminacion) === "hard" ? "Eliminacion fisica" : "Baja logica (desactivado)"
+
+  const motivoRaw = asText(detalle.motivo)
+  const motivo = motivoRaw === "referencias" ? "Tiene movimientos o referencias historicas" : motivoRaw
+
+  const lines = [
+    `Resultado: ${tipoEliminacion}`,
+    `Usuario afectado: ${objetivoNombre} (${objetivoUsuario})`,
+    `ID: ${objetivoId}`,
+    `Rol: ${objetivoRol}`,
+    `Ejecutado por: ${ejecutadoPorNombre}${ejecutadoPorId ? ` (ID ${ejecutadoPorId})` : ""}`,
+  ]
+
+  if (motivo) {
+    lines.push(`Motivo: ${motivo}`)
+  }
+
+  return lines.join("\n")
+}
+
+function formatDetalleTecnico(detalleJson: string | null | undefined) {
   if (!detalleJson) return "-"
   try {
     return JSON.stringify(JSON.parse(detalleJson), null, 2)
@@ -127,7 +185,15 @@ export function AuditoriaPanel() {
   const totalPagesVisibles = Math.max(totalPagesRaw, 1)
   const loading = isLoading || loadingUsuarios
 
-  const detalleActual = useMemo(() => formatDetalle(logSeleccionado?.detalleJson), [logSeleccionado?.detalleJson])
+  const detalleParseado = useMemo(() => parseDetalle(logSeleccionado?.detalleJson), [logSeleccionado?.detalleJson])
+  const detalleHumano = useMemo(
+    () => formatDetalleHumano(logSeleccionado, detalleParseado),
+    [logSeleccionado, detalleParseado],
+  )
+  const detalleTecnico = useMemo(
+    () => formatDetalleTecnico(logSeleccionado?.detalleJson),
+    [logSeleccionado?.detalleJson],
+  )
 
   function limpiarFiltros() {
     setFiltroAccion("")
@@ -321,7 +387,7 @@ export function AuditoriaPanel() {
                       <TableCell>{formatFecha(log.createdAt)}</TableCell>
                       <TableCell>{log.usuarioNombre || "Sistema"}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{log.accion}</Badge>
+                        <Badge variant="outline">{formatAccion(log.accion)}</Badge>
                       </TableCell>
                       <TableCell>{log.entidad}</TableCell>
                       <TableCell>{log.entidadId || "-"}</TableCell>
@@ -380,13 +446,23 @@ export function AuditoriaPanel() {
             <DialogTitle>Detalle de auditoria</DialogTitle>
             <DialogDescription>
               {logSeleccionado
-                ? `${logSeleccionado.accion} | ${logSeleccionado.entidad} #${logSeleccionado.entidadId || "-"}`
+                ? `${formatAccion(logSeleccionado.accion)} | ${logSeleccionado.entidad} #${logSeleccionado.entidadId || "-"}`
                 : "Detalle del evento"}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[420px] overflow-auto rounded-md border bg-muted/30 p-3">
-            <pre className="text-xs leading-5 whitespace-pre-wrap break-all">{detalleActual}</pre>
+          <div className="space-y-3">
+            {detalleHumano && (
+              <div className="rounded-md border bg-muted/20 p-3">
+                <p className="mb-2 text-sm font-medium">Resumen</p>
+                <pre className="text-xs leading-5 whitespace-pre-wrap break-words">{detalleHumano}</pre>
+              </div>
+            )}
+
+            <div className="max-h-[320px] overflow-auto rounded-md border bg-muted/30 p-3">
+              <p className="mb-2 text-sm font-medium">Detalle tecnico (JSON)</p>
+              <pre className="text-xs leading-5 whitespace-pre-wrap break-all">{detalleTecnico}</pre>
+            </div>
           </div>
 
           <DialogFooter>
