@@ -20,6 +20,14 @@ import {
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { useAuth } from "@/lib/auth-context"
 
 const navItems = [
@@ -36,12 +44,19 @@ const navItems = [
 export function AppSidebar() {
   const pathname = usePathname()
   const [abierto, setAbierto] = useState(false)
+  const [dialogCerrarSesionAbierto, setDialogCerrarSesionAbierto] = useState(false)
+  const [cerrandoSesion, setCerrandoSesion] = useState(false)
   const { user, logout } = useAuth()
 
   const itemsFiltrados = navItems.filter((item) => item.rol === "todos" || user?.rol === "admin")
 
-  async function handleLogout() {
+  function abrirConfirmacionLogout() {
     setAbierto(false)
+    setDialogCerrarSesionAbierto(true)
+  }
+
+  async function confirmarLogout() {
+    setCerrandoSesion(true)
 
     // Fuerza salida inmediata sin prompts de navegacion pendientes.
     if (typeof window !== "undefined") {
@@ -57,6 +72,8 @@ export function AppSidebar() {
     if (typeof window !== "undefined") {
       window.location.replace("/login?logout=1")
     }
+
+    setCerrandoSesion(false)
   }
 
   return (
@@ -145,7 +162,7 @@ export function AppSidebar() {
             <Button
               variant="ghost"
               className="mt-1 w-full justify-start gap-3 px-3 text-sm text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-              onClick={handleLogout}
+              onClick={abrirConfirmacionLogout}
             >
               <LogOut className="h-4 w-4" />
               Cerrar Sesion
@@ -153,6 +170,34 @@ export function AppSidebar() {
           </div>
         )}
       </aside>
+
+      <Dialog
+        open={dialogCerrarSesionAbierto}
+        onOpenChange={(open) => {
+          if (!cerrandoSesion) {
+            setDialogCerrarSesionAbierto(open)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cerrar sesion</DialogTitle>
+            <DialogDescription>Estas seguro que quieres cerrar sesion?</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDialogCerrarSesionAbierto(false)}
+              disabled={cerrandoSesion}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={confirmarLogout} disabled={cerrandoSesion}>
+              {cerrandoSesion ? "Cerrando..." : "Si, cerrar sesion"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
