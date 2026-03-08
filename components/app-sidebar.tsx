@@ -8,6 +8,7 @@ import {
   ShoppingCart,
   Package,
   BarChart3,
+  FileSearch,
   Truck,
   Building2,
   Store,
@@ -37,6 +38,7 @@ const navItems = [
   { href: "/productos", label: "Productos", icon: Package, rol: "admin" as const },
   { href: "/proveedores", label: "Proveedores", icon: Building2, rol: "admin" as const },
   { href: "/reportes", label: "Reportes", icon: BarChart3, rol: "admin" as const },
+  { href: "/auditoria", label: "Auditoria", icon: FileSearch, rol: "admin" as const },
   { href: "/usuarios", label: "Usuarios", icon: Users, rol: "admin" as const },
   { href: "/", label: "Administracion", icon: LayoutDashboard, rol: "admin" as const },
 ]
