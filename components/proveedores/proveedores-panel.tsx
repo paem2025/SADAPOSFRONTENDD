@@ -133,7 +133,7 @@ export function ProveedoresPanel() {
     }
   }
 
-  async function eliminarProveedor(proveedor: Proveedor) {
+  async function desactivarProveedor(proveedor: Proveedor) {
     if (!esAdmin) {
       toast.error("Solo admin puede gestionar proveedores")
       return
@@ -142,11 +142,11 @@ export function ProveedoresPanel() {
     setEliminandoId(proveedor.id)
     try {
       await api.delete(`/api/proveedores/${proveedor.id}`)
-      toast.success("Proveedor eliminado")
+      toast.success("Proveedor desactivado")
       await mutate()
       setConfirmDelete(null)
     } catch (err: unknown) {
-      toast.error(getErrorMessage(err, "No se pudo eliminar el proveedor"))
+      toast.error(getErrorMessage(err, "No se pudo desactivar el proveedor"))
     } finally {
       setEliminandoId(null)
     }
@@ -242,9 +242,9 @@ export function ProveedoresPanel() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => setConfirmDelete(p)}
-                            title="Eliminar proveedor"
-                            disabled={eliminandoId === p.id}
+                            onClick={() => p.activo && setConfirmDelete(p)}
+                            title={p.activo ? "Desactivar proveedor" : "Proveedor inactivo"}
+                            disabled={eliminandoId === p.id || !p.activo}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
@@ -324,7 +324,7 @@ export function ProveedoresPanel() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Eliminar proveedor</DialogTitle>
+            <DialogTitle>Desactivar proveedor</DialogTitle>
             <DialogDescription>
               Esta accion desactiva el proveedor
               {confirmDelete ? ` ${confirmDelete.nombre}` : ""}. Puedes verlo en Solo activos desmarcado.
@@ -336,16 +336,16 @@ export function ProveedoresPanel() {
             </Button>
             <Button
               variant="destructive"
-              onClick={() => confirmDelete && eliminarProveedor(confirmDelete)}
+              onClick={() => confirmDelete && desactivarProveedor(confirmDelete)}
               disabled={confirmDelete === null || eliminandoId !== null}
             >
               {eliminandoId !== null ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Eliminando...
+                  Desactivando...
                 </>
               ) : (
-                "Si, eliminar"
+                "Si, desactivar"
               )}
             </Button>
           </DialogFooter>

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname } from "next/navigation"
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -35,19 +35,27 @@ const navItems = [
 
 export function AppSidebar() {
   const pathname = usePathname()
-  const router = useRouter()
   const [abierto, setAbierto] = useState(false)
   const { user, logout } = useAuth()
 
   const itemsFiltrados = navItems.filter((item) => item.rol === "todos" || user?.rol === "admin")
 
   async function handleLogout() {
+    setAbierto(false)
+
+    // Fuerza salida inmediata sin prompts de navegacion pendientes.
+    if (typeof window !== "undefined") {
+      window.onbeforeunload = null
+    }
+
     try {
       await logout()
-    } finally {
-      setAbierto(false)
-      router.replace("/login")
-      router.refresh()
+    } catch {
+      // Incluso si falla la llamada de logout, cerramos sesion del lado cliente y redirigimos.
+    }
+
+    if (typeof window !== "undefined") {
+      window.location.replace("/login")
     }
   }
 
