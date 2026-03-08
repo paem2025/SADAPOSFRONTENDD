@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import useSWR from "swr"
 import { toast } from "sonner"
-import { Plus, Pencil, Loader2, Building2 } from "lucide-react"
+import { Plus, Pencil, Loader2, Building2, Trash2 } from "lucide-react"
 
 import api from "@/lib/api"
 import { useAuth } from "@/lib/auth-context"
@@ -52,6 +52,8 @@ export function ProveedoresPanel() {
   const [dialogAbierto, setDialogAbierto] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [editando, setEditando] = useState<Proveedor | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<Proveedor | null>(null)
+  const [eliminandoId, setEliminandoId] = useState<number | null>(null)
 
   const [nombre, setNombre] = useState("")
   const [contacto, setContacto] = useState("")
@@ -128,6 +130,25 @@ export function ProveedoresPanel() {
       toast.error(getErrorMessage(err, "No se pudo guardar el proveedor"))
     } finally {
       setGuardando(false)
+    }
+  }
+
+  async function eliminarProveedor(proveedor: Proveedor) {
+    if (!esAdmin) {
+      toast.error("Solo admin puede gestionar proveedores")
+      return
+    }
+
+    setEliminandoId(proveedor.id)
+    try {
+      await api.delete(`/api/proveedores/${proveedor.id}`)
+      toast.success("Proveedor eliminado")
+      await mutate()
+      setConfirmDelete(null)
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "No se pudo eliminar el proveedor"))
+    } finally {
+      setEliminandoId(null)
     }
   }
 
@@ -215,8 +236,17 @@ export function ProveedoresPanel() {
                       </TableCell>
                       {esAdmin && (
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" onClick={() => abrirEditar(p)}>
+                          <Button variant="ghost" size="icon" onClick={() => abrirEditar(p)} title="Editar proveedor">
                             <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setConfirmDelete(p)}
+                            title="Eliminar proveedor"
+                            disabled={eliminandoId === p.id}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </TableCell>
                       )}
@@ -280,6 +310,42 @@ export function ProveedoresPanel() {
                 "Guardar cambios"
               ) : (
                 "Crear proveedor"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={confirmDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDelete(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Eliminar proveedor</DialogTitle>
+            <DialogDescription>
+              Esta accion desactiva el proveedor
+              {confirmDelete ? ` ${confirmDelete.nombre}` : ""}. Puedes verlo en Solo activos desmarcado.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDelete(null)} disabled={eliminandoId !== null}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => confirmDelete && eliminarProveedor(confirmDelete)}
+              disabled={confirmDelete === null || eliminandoId !== null}
+            >
+              {eliminandoId !== null ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                "Si, eliminar"
               )}
             </Button>
           </DialogFooter>
