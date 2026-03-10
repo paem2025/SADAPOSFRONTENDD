@@ -18,8 +18,8 @@
   ],
   "ventas": [],
   "usuarios": [
-    { "id": 1, "nombre": "Administrador", "usuario": "admin", "password": "admin123", "rol": "admin", "activo": true },
-    { "id": 2, "nombre": "Empleado", "usuario": "empleado", "password": "emp123", "rol": "empleado", "activo": true }
+    { "id": 1, "nombre": "Administrador", "usuario": "admin", "password": "REDACTED_DO_NOT_USE", "rol": "admin", "activo": true },
+    { "id": 2, "nombre": "Empleado", "usuario": "empleado", "password": "REDACTED_DO_NOT_USE", "rol": "empleado", "activo": true }
   ],
   "sesiones": [],
   "cajas": [],
