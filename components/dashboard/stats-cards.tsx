@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 interface StatsCardsProps {
   totalProductos: number
+  patrimonioStock: number
   ventasHoy: number
   ingresoHoy: number
   gananciaHoy: number
@@ -21,6 +22,7 @@ function formatPrecio(value: number) {
 
 export function StatsCards({
   totalProductos,
+  patrimonioStock,
   ventasHoy,
   ingresoHoy,
   gananciaHoy,
@@ -28,7 +30,7 @@ export function StatsCards({
   alertasVencimiento,
 }: StatsCardsProps) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4 xl:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4 xl:grid-cols-7">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">Productos</CardTitle>
@@ -37,6 +39,17 @@ export function StatsCards({
         <CardContent>
           <div className="text-2xl font-bold text-foreground">{totalProductos}</div>
           <p className="text-xs text-muted-foreground">en catalogo</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">Patrimonio Stock</CardTitle>
+          <DollarSign className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold text-foreground">{formatPrecio(patrimonioStock)}</div>
+          <p className="text-xs text-muted-foreground">a costo</p>
         </CardContent>
       </Card>
 

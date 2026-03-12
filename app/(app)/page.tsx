@@ -90,6 +90,11 @@ type CajaResumenResponse = {
   totalDiferencia: number | string
 }
 
+type ProductoPatrimonioResponse = {
+  totalCostoStock: number | string
+  cantidadProductosConStock: number
+}
+
 const fetcher = (url: string) => api.get(url).then((r) => r.data)
 
 function toNumber(value: unknown): number {
@@ -122,6 +127,12 @@ export default function DashboardPage() {
     { refreshInterval: 5000 }
   )
 
+  const { data: patrimonioStockData } = useSWR<ProductoPatrimonioResponse>(
+    "/api/productos/patrimonio",
+    fetcher,
+    { refreshInterval: 5000 }
+  )
+
   const { data: productosPage } = useSWR<PageResponse<ProductoBackend>>(
     "/api/productos/paginado?page=0&size=1&sortBy=nombre&sortDir=asc",
     fetcher,
@@ -145,6 +156,7 @@ export default function DashboardPage() {
 
   const ingresoHoy = ingresoHoyVentas > 0 ? ingresoHoyVentas : ingresoHoyCajas
   const gananciaHoy = gananciaHoyVentas > 0 ? gananciaHoyVentas : gananciaHoyCajas
+  const patrimonioStock = toNumber(patrimonioStockData?.totalCostoStock)
 
   const alertasStock = alertas?.cantidadStockBajo ?? 0
   const alertasVencimiento = (alertas?.cantidadVencidos ?? 0) + (alertas?.cantidadVencimientosProximos ?? 0)
@@ -158,6 +170,7 @@ export default function DashboardPage() {
 
       <StatsCards
         totalProductos={totalProductos}
+        patrimonioStock={patrimonioStock}
         ventasHoy={ventasHoy}
         ingresoHoy={ingresoHoy}
         gananciaHoy={gananciaHoy}
