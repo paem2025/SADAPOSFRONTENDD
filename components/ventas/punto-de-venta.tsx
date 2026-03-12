@@ -19,6 +19,7 @@ import {
   Download,
   Smartphone,
   Tv,
+  Building2,
   Percent,
 } from "lucide-react"
 
@@ -40,8 +41,8 @@ import {
 
 type MedioPago = "efectivo" | "debito" | "credito" | "transferencia"
 type ModoPrecioPeso = "gramo" | "cien_gramos"
-type AtajoPos = "carga_virtual" | "direct_tv" | "imprimir_color" | "imprimir_normal"
-type TipoServicioRapido = "carga_virtual" | "direct_tv"
+type AtajoPos = "carga_virtual" | "direct_tv" | "imprimir_color" | "imprimir_normal" | "pago_proveedores"
+type TipoServicioRapido = "carga_virtual" | "direct_tv" | "pago_proveedores"
 type TipoImpresionRapida = "imprimir_color" | "imprimir_normal"
 
 type OfertaItem = {
@@ -311,7 +312,7 @@ function esProductoCigarrillo(p: Producto) {
 }
 
 function esAtajoSaldo(atajo: AtajoPos | null | undefined) {
-  return atajo === "carga_virtual" || atajo === "direct_tv"
+  return atajo === "carga_virtual" || atajo === "direct_tv" || atajo === "pago_proveedores"
 }
 
 function calcularRecargoServicio(atajo: AtajoPos | null | undefined, monto: number) {
@@ -330,7 +331,15 @@ function etiquetaAtajo(atajo: AtajoPos | null | undefined) {
   if (atajo === "carga_virtual") return "Carga virtual"
   if (atajo === "direct_tv") return "Direct TV"
   if (atajo === "imprimir_color") return "Imprimir color"
-  return "Imprimir normal"
+  if (atajo === "imprimir_normal") return "Imprimir normal"
+  return "Pago proveedores"
+}
+
+function etiquetaServicioRapido(tipo: TipoServicioRapido | null | undefined) {
+  if (tipo === "carga_virtual") return "Carga virtual"
+  if (tipo === "direct_tv") return "Direct TV"
+  if (tipo === "pago_proveedores") return "Pago proveedores"
+  return "Servicio rapido"
 }
 
 function esProductoSaldoValido(p: Producto | null | undefined) {
@@ -437,6 +446,10 @@ export function PuntoDeVenta() {
     "/api/productos/atajo/imprimir_normal",
     productoAtajoFetcher
   )
+  const { data: productoPagoProveedores, mutate: mutatePagoProveedores } = useSWR<Producto | null>(
+    "/api/productos/atajo/pago_proveedores",
+    productoAtajoFetcher
+  )
   const { data: cajaAbierta, mutate: mutateCaja, isLoading: cargandoCaja } = useSWR<CajaAbierta | null>(
     "/api/cajas/abierta",
     cajaFetcher
@@ -492,8 +505,11 @@ export function PuntoDeVenta() {
     if (tipoRecarga === "carga_virtual") {
       return productoCargaVirtual ?? productos.find((p) => p.atajoPos === "carga_virtual") ?? null
     }
+    if (tipoRecarga === "pago_proveedores") {
+      return productoPagoProveedores ?? productos.find((p) => p.atajoPos === "pago_proveedores") ?? null
+    }
     return productoDirectTv ?? productos.find((p) => p.atajoPos === "direct_tv") ?? null
-  }, [tipoRecarga, productoCargaVirtual, productoDirectTv, productos])
+  }, [tipoRecarga, productoCargaVirtual, productoDirectTv, productoPagoProveedores, productos])
 
   const productoImpresionSeleccionado = useMemo(() => {
     if (tipoImpresion === "imprimir_color") {
@@ -510,6 +526,11 @@ export function PuntoDeVenta() {
   const saldoDirectTv = useMemo(
     () => (productoDirectTv ?? productos.find((p) => p.atajoPos === "direct_tv"))?.stock ?? 0,
     [productoDirectTv, productos]
+  )
+
+  const saldoPagoProveedores = useMemo(
+    () => (productoPagoProveedores ?? productos.find((p) => p.atajoPos === "pago_proveedores"))?.stock ?? 0,
+    [productoPagoProveedores, productos]
   )
 
   const stockImpresionColor = useMemo(
@@ -1080,6 +1101,9 @@ export function PuntoDeVenta() {
     if (tipo === "carga_virtual") {
       return productoCargaVirtual ?? productos.find((p) => p.atajoPos === "carga_virtual") ?? null
     }
+    if (tipo === "pago_proveedores") {
+      return productoPagoProveedores ?? productos.find((p) => p.atajoPos === "pago_proveedores") ?? null
+    }
     return productoDirectTv ?? productos.find((p) => p.atajoPos === "direct_tv") ?? null
   }
 
@@ -1098,7 +1122,7 @@ export function PuntoDeVenta() {
 
     const producto = getProductoServicio(tipo)
     if (!producto) {
-      toast.error(`No hay producto configurado para ${tipo === "carga_virtual" ? "Carga virtual" : "Direct TV"}`)
+      toast.error(`No hay producto configurado para ${etiquetaServicioRapido(tipo)}`)
       return
     }
 
@@ -1122,7 +1146,7 @@ export function PuntoDeVenta() {
 
     const producto = getProductoServicio(tipoRecarga)
     if (!producto) {
-      toast.error("Producto de recarga no configurado")
+      toast.error("Producto de servicio no configurado")
       return
     }
 
@@ -1161,7 +1185,7 @@ export function PuntoDeVenta() {
 
     setDialogRecargaAbierto(false)
     resetDialogRecarga()
-    toast.success("Recarga agregada al carrito")
+    toast.success(`${etiquetaServicioRapido(tipoRecarga)} agregado al carrito`)
   }
 
   function abrirDialogImpresion(tipoInicial: TipoImpresionRapida = "imprimir_normal") {
@@ -1267,6 +1291,11 @@ export function PuntoDeVenta() {
 
     if (p.atajoPos === "direct_tv") {
       abrirDialogRecarga("direct_tv")
+      return
+    }
+
+    if (p.atajoPos === "pago_proveedores") {
+      abrirDialogRecarga("pago_proveedores")
       return
     }
 
@@ -1511,6 +1540,7 @@ export function PuntoDeVenta() {
         mutateProductos(),
         mutateCargaVirtual(),
         mutateDirectTv(),
+        mutatePagoProveedores(),
         mutateImpresionColor(),
         mutateImpresionNormal(),
       ])
@@ -1661,6 +1691,7 @@ export function PuntoDeVenta() {
         mutateCaja(),
         mutateCargaVirtual(),
         mutateDirectTv(),
+        mutatePagoProveedores(),
         mutateImpresionColor(),
         mutateImpresionNormal(),
       ])
@@ -1699,6 +1730,7 @@ export function PuntoDeVenta() {
         mutateCaja(),
         mutateCargaVirtual(),
         mutateDirectTv(),
+        mutatePagoProveedores(),
         mutateImpresionColor(),
         mutateImpresionNormal(),
       ])
@@ -1880,6 +1912,17 @@ export function PuntoDeVenta() {
                 <Button
                   type="button"
                   variant="outline"
+                  onClick={() => abrirDialogRecarga("pago_proveedores")}
+                  disabled={!cajaAbierta}
+                  className="w-full sm:w-auto"
+                >
+                  <Building2 className="mr-2 h-4 w-4" />
+                  Pago proveedores (saldo: {saldoPagoProveedores})
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={() => abrirDialogImpresion()}
                   disabled={!cajaAbierta}
                   className="w-full sm:w-auto"
@@ -1903,6 +1946,7 @@ export function PuntoDeVenta() {
                 Usa la pistola lectora o escribi el nombre/codigo manualmente.
                 {productoCargaVirtual === null && ' Falta crear/configurar el atajo "carga_virtual".'}
                 {productoDirectTv === null && ' Falta crear/configurar el atajo "direct_tv".'}
+                {productoPagoProveedores === null && ' Falta crear/configurar el atajo "pago_proveedores".'}
                 {productoImpresionColor === null && ' Falta crear/configurar el atajo "imprimir_color".'}
                 {productoImpresionNormal === null && ' Falta crear/configurar el atajo "imprimir_normal".'}
               </p>
@@ -2344,9 +2388,11 @@ export function PuntoDeVenta() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{tipoRecarga === "carga_virtual" ? "Carga virtual" : "Direct TV"}</DialogTitle>
+            <DialogTitle>{etiquetaServicioRapido(tipoRecarga)}</DialogTitle>
             <DialogDescription>
-              Ingresa el monto a cargar. Se descuenta del saldo disponible y se aplica recargo automatico.
+              {tipoRecarga === "pago_proveedores"
+                ? "Ingresa el monto a pagar al proveedor. Se descuenta del saldo disponible."
+                : "Ingresa el monto a cargar. Se descuenta del saldo disponible y se aplica recargo automatico."}
             </DialogDescription>
           </DialogHeader>
 
@@ -2382,9 +2428,11 @@ export function PuntoDeVenta() {
                 <span>
                   {tipoRecarga === "direct_tv"
                     ? "10%"
-                    : `$${RECARGO_CARGA_VIRTUAL_BAJO} hasta $${CARGA_VIRTUAL_CORTE_RECARGO - 1}, luego $${
-                        RECARGO_CARGA_VIRTUAL_ALTO
-                      }`}
+                    : tipoRecarga === "carga_virtual"
+                      ? `$${RECARGO_CARGA_VIRTUAL_BAJO} hasta $${CARGA_VIRTUAL_CORTE_RECARGO - 1}, luego $${
+                          RECARGO_CARGA_VIRTUAL_ALTO
+                        }`
+                      : "Sin recargo"}
                 </span>
               </div>
               <div className="mt-1 flex items-center justify-between">

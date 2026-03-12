@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 type ModoPrecioPeso = "gramo" | "cien_gramos"
-type AtajoPos = "carga_virtual" | "direct_tv" | "imprimir_color" | "imprimir_normal"
+type AtajoPos = "carga_virtual" | "direct_tv" | "imprimir_color" | "imprimir_normal" | "pago_proveedores"
 
 type ProductoBackend = {
   id: number
@@ -155,7 +155,7 @@ function getApiErrorMessage(err: unknown, fallback: string) {
 }
 
 function esAtajoSaldo(atajo: AtajoPos | null | undefined) {
-  return atajo === "carga_virtual" || atajo === "direct_tv"
+  return atajo === "carga_virtual" || atajo === "direct_tv" || atajo === "pago_proveedores"
 }
 
 function etiquetaAtajo(atajo: AtajoPos | null | undefined) {
@@ -163,7 +163,8 @@ function etiquetaAtajo(atajo: AtajoPos | null | undefined) {
   if (atajo === "carga_virtual") return "carga virtual"
   if (atajo === "direct_tv") return "direct tv"
   if (atajo === "imprimir_color") return "imprimir color"
-  return "imprimir normal"
+  if (atajo === "imprimir_normal") return "imprimir normal"
+  return "pago proveedores"
 }
 
 export default function ProductosTabla() {
@@ -529,6 +530,7 @@ export default function ProductosTabla() {
                 <option value="direct_tv">Direct TV</option>
                 <option value="imprimir_color">Imprimir color</option>
                 <option value="imprimir_normal">Imprimir normal</option>
+                <option value="pago_proveedores">Pago proveedores</option>
               </select>
               {esProductoSaldo && (
                 <p className="text-xs text-muted-foreground">
