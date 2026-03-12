@@ -3,6 +3,7 @@
 import useSWR from "swr"
 import api from "@/lib/api"
 import { StatsCards } from "@/components/dashboard/stats-cards"
+import { PatrimonioCategorias } from "@/components/dashboard/patrimonio-categorias"
 import { StockAlertas } from "@/components/dashboard/stock-alertas"
 import { VentasRecientes } from "@/components/dashboard/ventas-recientes"
 
@@ -95,6 +96,18 @@ type ProductoPatrimonioResponse = {
   cantidadProductosConStock: number
 }
 
+type ProductoPatrimonioCategoriaResponse = {
+  categoria: string
+  totalCostoStock: number | string
+  cantidadProductosConStock: number
+}
+
+type ProductoPatrimonioCategoriasResponse = {
+  categorias: ProductoPatrimonioCategoriaResponse[]
+  totalCostoStockFiltrado: number | string
+  cantidadProductosConStockFiltrado: number
+}
+
 const fetcher = (url: string) => api.get(url).then((r) => r.data)
 
 function toNumber(value: unknown): number {
@@ -129,6 +142,12 @@ export default function DashboardPage() {
 
   const { data: patrimonioStockData } = useSWR<ProductoPatrimonioResponse>(
     "/api/productos/patrimonio",
+    fetcher,
+    { refreshInterval: 5000 }
+  )
+
+  const { data: patrimonioCategoriasData } = useSWR<ProductoPatrimonioCategoriasResponse>(
+    "/api/productos/patrimonio/categorias",
     fetcher,
     { refreshInterval: 5000 }
   )
@@ -179,13 +198,20 @@ export default function DashboardPage() {
       />
 
       <div className="grid gap-4 md:gap-6 lg:grid-cols-2">
+        <PatrimonioCategorias
+          categorias={patrimonioCategoriasData?.categorias ?? []}
+          totalCostoStockFiltrado={patrimonioCategoriasData?.totalCostoStockFiltrado ?? 0}
+          cantidadProductosConStockFiltrado={patrimonioCategoriasData?.cantidadProductosConStockFiltrado ?? 0}
+        />
         <StockAlertas
           diasVentana={alertas?.diasVentana ?? 30}
           stockBajo={alertas?.stockBajo ?? []}
           vencimientosProximos={alertas?.vencimientosProximos ?? []}
           vencidos={alertas?.vencidos ?? []}
         />
-        <VentasRecientes ventas={ventasPage?.items ?? []} />
+        <div className="lg:col-span-2">
+          <VentasRecientes ventas={ventasPage?.items ?? []} />
+        </div>
       </div>
     </div>
   )
