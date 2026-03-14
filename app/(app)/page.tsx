@@ -96,6 +96,11 @@ type ProductoPatrimonioResponse = {
   cantidadProductosConStock: number
 }
 
+type ProductoPatrimonioVentaResponse = {
+  totalVentaStock: number | string
+  cantidadProductosConStock: number
+}
+
 type ProductoPatrimonioCategoriaResponse = {
   categoria: string
   totalCostoStock: number | string
@@ -146,6 +151,12 @@ export default function DashboardPage() {
     { refreshInterval: 5000 }
   )
 
+  const { data: patrimonioVentaData } = useSWR<ProductoPatrimonioVentaResponse>(
+    "/api/productos/patrimonio/venta",
+    fetcher,
+    { refreshInterval: 5000 }
+  )
+
   const { data: patrimonioCategoriasData } = useSWR<ProductoPatrimonioCategoriasResponse>(
     "/api/productos/patrimonio/categorias",
     fetcher,
@@ -176,6 +187,7 @@ export default function DashboardPage() {
   const ingresoHoy = ingresoHoyVentas > 0 ? ingresoHoyVentas : ingresoHoyCajas
   const gananciaHoy = gananciaHoyVentas > 0 ? gananciaHoyVentas : gananciaHoyCajas
   const patrimonioStock = toNumber(patrimonioStockData?.totalCostoStock)
+  const patrimonioVenta = toNumber(patrimonioVentaData?.totalVentaStock)
 
   const alertasStock = alertas?.cantidadStockBajo ?? 0
   const alertasVencimiento = (alertas?.cantidadVencidos ?? 0) + (alertas?.cantidadVencimientosProximos ?? 0)
@@ -190,6 +202,7 @@ export default function DashboardPage() {
       <StatsCards
         totalProductos={totalProductos}
         patrimonioStock={patrimonioStock}
+        patrimonioVenta={patrimonioVenta}
         ventasHoy={ventasHoy}
         ingresoHoy={ingresoHoy}
         gananciaHoy={gananciaHoy}

@@ -468,7 +468,8 @@ export function PuntoDeVenta() {
     return productos.filter((p) => {
       const nombre = (p.nombre || "").toLowerCase()
       const codigo = (p.codigoBarras || "").toLowerCase()
-      return nombre.includes(query) || codigo.includes(query)
+      const categoria = (p.categoria || "").toLowerCase()
+      return nombre.includes(query) || codigo.includes(query) || categoria.includes(query)
     })
   }, [productos, query])
 
