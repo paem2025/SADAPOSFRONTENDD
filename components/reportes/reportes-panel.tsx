@@ -1,11 +1,11 @@
 ﻿"use client"
 
-import { useMemo, useState } from "react"
+import { type ComponentType, useMemo, useState } from "react"
 import useSWR from "swr"
 import api from "@/lib/api"
 import { useAuth } from "@/lib/auth-context"
 import { toast } from "sonner"
-import { Download, RotateCcw } from "lucide-react"
+import { DollarSign, Download, ShoppingCart, TrendingDown, TrendingUp, RotateCcw } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { cn } from "@/lib/utils"
 
 type MedioPago = "efectivo" | "debito" | "credito" | "transferencia"
 type EstadoVenta = "activa" | "anulada"
@@ -122,6 +123,18 @@ type ReporteVentasResponse = {
   detalle: ReporteVentaDetalle[]
 }
 
+type ResumenCard = {
+  key: string
+  label: string
+  value: string
+  subtitle: string
+  icon: ComponentType<{ className?: string }>
+  cardTone: string
+  iconTone: string
+  valueClassName?: string
+  pulse?: "critical" | "warning"
+}
+
 const fetcher = <T,>(url: string) => api.get<T>(url).then((r) => r.data)
 
 function toNumber(value: unknown): number {
@@ -135,6 +148,12 @@ function toNumber(value: unknown): number {
 
 function formatPrecio(n: number) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n || 0)
+}
+
+function classGanancia(value: number) {
+  if (value < 0) return "text-destructive"
+  if (value === 0) return "text-muted-foreground"
+  return "text-success"
 }
 
 function formatFecha(iso: string) {
@@ -284,6 +303,63 @@ export default function ReportesPanel() {
   const totalGanancia = toNumber(reporte?.totalGanancia)
   const margen = toNumber(reporte?.margenPorcentaje)
   const ticketPromedio = cantidadVentas > 0 ? totalVendido / cantidadVentas : 0
+  const gananciaNegativa = totalGanancia < 0
+  const margenCritico = cantidadVentas > 0 && margen < 0
+  const margenBajo = cantidadVentas > 0 && margen >= 0 && margen < 20
+  const resumenCards: ResumenCard[] = [
+    {
+      key: "total-vendido",
+      label: "Total vendido",
+      value: formatPrecio(totalVendido),
+      subtitle: `${cantidadVentas} ${cantidadVentas === 1 ? "venta" : "ventas"}`,
+      icon: DollarSign,
+      cardTone: "from-success/20 via-success/7 to-transparent border-success/32",
+      iconTone: "bg-success/20 text-success",
+      valueClassName: "text-success",
+    },
+    {
+      key: "total-costo",
+      label: "Total costo",
+      value: formatPrecio(totalCosto),
+      subtitle: "acumulado del periodo",
+      icon: DollarSign,
+      cardTone: "from-warning/20 via-warning/8 to-transparent border-warning/34",
+      iconTone: "bg-warning/18 text-warning",
+      valueClassName: "text-warning",
+    },
+    {
+      key: "ganancia-neta",
+      label: "Ganancia neta",
+      value: formatPrecio(totalGanancia),
+      subtitle: gananciaNegativa ? "perdida del periodo" : "resultado del periodo",
+      icon: gananciaNegativa ? TrendingDown : TrendingUp,
+      cardTone: gananciaNegativa
+        ? "from-destructive/24 via-destructive/9 to-transparent border-destructive/36"
+        : "from-success/18 via-success/5 to-transparent border-success/30",
+      iconTone: gananciaNegativa ? "bg-destructive/22 text-destructive" : "bg-success/18 text-success",
+      valueClassName: classGanancia(totalGanancia),
+      pulse: gananciaNegativa ? "critical" : undefined,
+    },
+    {
+      key: "ticket-promedio",
+      label: "Ticket promedio",
+      value: formatPrecio(ticketPromedio),
+      subtitle: `${margenCritico ? "margen critico" : margenBajo ? "margen bajo" : "margen"} ${margen.toFixed(2)}%`,
+      icon: ShoppingCart,
+      cardTone: margenCritico
+        ? "from-destructive/22 via-destructive/8 to-transparent border-destructive/35"
+        : margenBajo
+          ? "from-warning/20 via-warning/8 to-transparent border-warning/34"
+          : "from-success/16 via-success/5 to-transparent border-success/28",
+      iconTone: margenCritico
+        ? "bg-destructive/20 text-destructive"
+        : margenBajo
+          ? "bg-warning/18 text-warning"
+          : "bg-success/18 text-success",
+      valueClassName: margenCritico ? "text-destructive" : margenBajo ? "text-warning" : "text-success",
+      pulse: margenCritico ? "critical" : margenBajo ? "warning" : undefined,
+    },
+  ]
 
   function limpiarFiltros() {
     setFiltroCajaId("")
@@ -606,32 +682,32 @@ export default function ReportesPanel() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Total vendido</p>
-            <p className="text-2xl font-bold">{formatPrecio(totalVendido)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Total costo</p>
-            <p className="text-2xl font-bold text-muted-foreground">{formatPrecio(totalCosto)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Ganancia neta</p>
-            <p className="text-2xl font-bold text-green-600">{formatPrecio(totalGanancia)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Ticket promedio</p>
-            <p className="text-2xl font-bold">{formatPrecio(ticketPromedio)}</p>
-            <p className="text-xs text-muted-foreground">margen: {margen.toFixed(2)}%</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-4">
+        {resumenCards.map((card) => (
+          <article
+            key={card.key}
+            className={cn(
+              "group relative overflow-hidden rounded-2xl border bg-gradient-to-br p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl",
+              card.cardTone,
+              card.pulse === "critical" && "alert-critical-blink",
+              card.pulse === "warning" && "alert-warning-pulse"
+            )}
+          >
+            <div className="absolute -bottom-8 -right-8 h-24 w-24 rounded-full bg-current opacity-[0.08]" />
+            <div className="relative flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{card.label}</p>
+                <p className={cn("mt-2 truncate text-2xl font-bold tracking-tight text-foreground", card.valueClassName)}>
+                  {card.value}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{card.subtitle}</p>
+              </div>
+              <div className={cn("rounded-xl p-2.5 transition-transform duration-200 group-hover:scale-105", card.iconTone)}>
+                <card.icon className="h-4.5 w-4.5" />
+              </div>
+            </div>
+          </article>
+        ))}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -664,7 +740,9 @@ export default function ReportesPanel() {
                       <TableCell>{fila.fecha}</TableCell>
                       <TableCell className="text-center">{fila.cantidadVentas}</TableCell>
                       <TableCell className="text-right">{formatPrecio(toNumber(fila.totalVendido))}</TableCell>
-                      <TableCell className="text-right text-green-600">{formatPrecio(toNumber(fila.totalGanancia))}</TableCell>
+                      <TableCell className={cn("text-right", classGanancia(toNumber(fila.totalGanancia)))}>
+                        {formatPrecio(toNumber(fila.totalGanancia))}
+                      </TableCell>
                       <TableCell className="text-right">{toNumber(fila.margenPorcentaje).toFixed(2)}%</TableCell>
                     </TableRow>
                   ))}
@@ -703,7 +781,9 @@ export default function ReportesPanel() {
                       <TableCell className="capitalize">{fila.medioPago}</TableCell>
                       <TableCell className="text-center">{fila.cantidadVentas}</TableCell>
                       <TableCell className="text-right">{formatPrecio(toNumber(fila.totalVendido))}</TableCell>
-                      <TableCell className="text-right text-green-600">{formatPrecio(toNumber(fila.totalGanancia))}</TableCell>
+                      <TableCell className={cn("text-right", classGanancia(toNumber(fila.totalGanancia)))}>
+                        {formatPrecio(toNumber(fila.totalGanancia))}
+                      </TableCell>
                       <TableCell className="text-right">{toNumber(fila.margenPorcentaje).toFixed(2)}%</TableCell>
                     </TableRow>
                   ))}
@@ -742,7 +822,9 @@ export default function ReportesPanel() {
                     <TableCell>{fila.usuarioNombre || "-"}</TableCell>
                     <TableCell className="text-center">{fila.cantidadVentas}</TableCell>
                     <TableCell className="text-right">{formatPrecio(toNumber(fila.totalVendido))}</TableCell>
-                    <TableCell className="text-right text-green-600">{formatPrecio(toNumber(fila.totalGanancia))}</TableCell>
+                    <TableCell className={cn("text-right", classGanancia(toNumber(fila.totalGanancia)))}>
+                      {formatPrecio(toNumber(fila.totalGanancia))}
+                    </TableCell>
                     <TableCell className="text-right">{toNumber(fila.margenPorcentaje).toFixed(2)}%</TableCell>
                   </TableRow>
                 ))}
@@ -785,7 +867,9 @@ export default function ReportesPanel() {
                     <TableCell className="capitalize">{fila.medioPago}</TableCell>
                     <TableCell className="text-center">{fila.cantidadVentas}</TableCell>
                     <TableCell className="text-right">{formatPrecio(toNumber(fila.totalVendido))}</TableCell>
-                    <TableCell className="text-right text-green-600">{formatPrecio(toNumber(fila.totalGanancia))}</TableCell>
+                    <TableCell className={cn("text-right", classGanancia(toNumber(fila.totalGanancia)))}>
+                      {formatPrecio(toNumber(fila.totalGanancia))}
+                    </TableCell>
                     <TableCell className="text-right">{toNumber(fila.margenPorcentaje).toFixed(2)}%</TableCell>
                   </TableRow>
                 ))}
@@ -837,7 +921,9 @@ export default function ReportesPanel() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">{formatPrecio(toNumber(venta.total))}</TableCell>
-                    <TableCell className="text-right text-green-600">{formatPrecio(toNumber(venta.ganancia))}</TableCell>
+                    <TableCell className={cn("text-right", classGanancia(toNumber(venta.ganancia)))}>
+                      {formatPrecio(toNumber(venta.ganancia))}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={venta.estado === "anulada" ? "destructive" : "secondary"} className="capitalize">
                         {venta.estado}
