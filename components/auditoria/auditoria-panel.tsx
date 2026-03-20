@@ -288,7 +288,7 @@ export function AuditoriaPanel() {
 
   return (
     <div className="flex flex-col gap-4 p-4 md:gap-6 md:p-6">
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+      <div className="page-tone flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-foreground md:text-2xl">Auditoria</h1>
           <p className="text-sm text-muted-foreground">Trazabilidad de acciones administrativas y operativas</p>
@@ -345,7 +345,7 @@ export function AuditoriaPanel() {
                   setFiltroUsuarioId(e.target.value)
                   setPage(0)
                 }}
-                className="h-10 rounded-md border bg-background px-3 text-sm"
+                className="control-tone h-10 rounded-md border bg-background px-3 text-sm"
               >
                 <option value="">Todos</option>
                 {usuarios.map((u) => (

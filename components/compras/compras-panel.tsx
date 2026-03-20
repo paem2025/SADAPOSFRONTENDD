@@ -225,7 +225,7 @@ export function ComprasPanel() {
 
   return (
     <div className="flex flex-col gap-4 p-4 md:gap-6 md:p-6">
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+      <div className="page-tone flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-foreground md:text-2xl">Compras</h1>
           <p className="text-sm text-muted-foreground">Ingreso de mercaderia con costo y lote</p>
@@ -249,7 +249,7 @@ export function ComprasPanel() {
             <div className="grid gap-2">
               <Label>Proveedor *</Label>
               <select
-                className="h-10 rounded-md border bg-background px-3 text-sm"
+                className="control-tone h-10 rounded-md border bg-background px-3 text-sm"
                 value={proveedorId ?? ""}
                 onChange={(e) => setProveedorId(e.target.value ? Number(e.target.value) : null)}
               >
@@ -288,7 +288,7 @@ export function ComprasPanel() {
                 <div className="md:col-span-2">
                   <Label>Producto</Label>
                   <select
-                    className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    className="control-tone mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
                     value={productoIdDraft ?? ""}
                     onChange={(e) => setProductoIdDraft(e.target.value ? Number(e.target.value) : null)}
                   >
@@ -409,7 +409,7 @@ export function ComprasPanel() {
             <div className="grid gap-2">
               <Label>Proveedor</Label>
               <select
-                className="h-10 rounded-md border bg-background px-3 text-sm"
+                className="control-tone h-10 rounded-md border bg-background px-3 text-sm"
                 value={filtroProveedor}
                 onChange={(e) => setFiltroProveedor(e.target.value ? Number(e.target.value) : "")}
               >

@@ -1817,7 +1817,7 @@ export function PuntoDeVenta() {
 
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+      <div className="page-tone flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Punto de Venta</h1>
           <p className="text-sm text-muted-foreground">Escanea o busca productos para vender</p>
@@ -2269,7 +2269,7 @@ export function PuntoDeVenta() {
                 id="peso-producto"
                 value={productoPesoId}
                 onChange={(e) => seleccionarProductoPeso(e.target.value)}
-                className="h-10 rounded-md border bg-background px-3 text-sm"
+                className="control-tone h-10 rounded-md border bg-background px-3 text-sm"
               >
                 <option value="">Selecciona un producto</option>
                 {productosPesables.map((p) => (
@@ -2598,7 +2598,7 @@ export function PuntoDeVenta() {
                   id="oferta-producto"
                   value={ofertaProductoId}
                   onChange={(e) => seleccionarProductoOferta(e.target.value)}
-                  className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm"
+                  className="control-tone h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm"
                 >
                   <option value="">Selecciona un producto</option>
                   {productosOfertablesFiltrados.map((p) => (

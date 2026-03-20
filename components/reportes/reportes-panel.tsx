@@ -555,7 +555,7 @@ export default function ReportesPanel() {
 
   return (
     <div className="flex flex-col gap-4 p-4 md:gap-6 md:p-6">
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+      <div className="page-tone flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-foreground md:text-2xl">Reportes</h1>
           <p className="text-sm text-muted-foreground">Ventas por dia, usuario, medio de pago y margen</p>
@@ -565,7 +565,7 @@ export default function ReportesPanel() {
           <select
             value={vistaExport}
             onChange={(e) => setVistaExport(e.target.value as ReporteVista)}
-            className="h-10 rounded-md border bg-background px-3 text-sm"
+            className="control-tone h-10 rounded-md border bg-background px-3 text-sm"
           >
             <option value="detalle">Exportar: Detalle</option>
             <option value="dia">Exportar: Por dia</option>
@@ -624,7 +624,7 @@ export default function ReportesPanel() {
                   id="filtroUsuarioId"
                   value={filtroUsuarioId}
                   onChange={(e) => setFiltroUsuarioId(e.target.value)}
-                  className="h-10 rounded-md border bg-background px-3 text-sm"
+                  className="control-tone h-10 rounded-md border bg-background px-3 text-sm"
                 >
                   <option value="">Todos</option>
                   {usuarios.map((u) => (
@@ -642,7 +642,7 @@ export default function ReportesPanel() {
                 id="filtroMedioPago"
                 value={filtroMedioPago}
                 onChange={(e) => setFiltroMedioPago(e.target.value as "" | MedioPago)}
-                className="h-10 rounded-md border bg-background px-3 text-sm"
+                className="control-tone h-10 rounded-md border bg-background px-3 text-sm"
               >
                 <option value="">Todos</option>
                 <option value="efectivo">Efectivo</option>
@@ -1026,7 +1026,7 @@ export default function ReportesPanel() {
                   id="backupSeleccionado"
                   value={backupSeleccionado}
                   onChange={(e) => setBackupSeleccionado(e.target.value)}
-                  className="h-10 rounded-md border bg-background px-3 text-sm"
+                  className="control-tone h-10 rounded-md border bg-background px-3 text-sm"
                 >
                   {backupFiles.map((f) => (
                     <option key={f.fileName} value={f.fileName}>
